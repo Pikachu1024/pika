@@ -1,109 +1,131 @@
-# Event contract
+# 事件契约
 
-Every runtime observation is one normalized `AgentEvent`. The same objects flow to three consumers without translation:
+运行时的每一次可观察变化都是一个规范化 `AgentEvent`。同一批对象不加转换地流向三个消费者：
 
+```text
+runtime --emit--> session log（追加式 JSONL）
+              \--> event sink（进程内客户端、测试）
+              \--> server transport（规划：协议帧）
 ```
-runtime --emit--> session log (append-only JSONL)
-              \--> event sink (in-process client, tests)
-              \--> server transport (later: protocol frames)
-```
 
-The schema lives in `packages/schema/src/events.ts`. Consumers must validate with `AgentEventSchema`; producers must not invent fields.
+schema 定义在 `packages/schema/src/events.ts`。消费者必须用 `AgentEventSchema` 校验，生产者不得发明字段。
 
-## Envelope
+## 1. 事件信封
 
-```
+```text
 EventBase      = { sessionId, timestamp }
 TurnEventBase  = EventBase + { turnId }
 ```
 
-`timestamp` is an ISO-8601 string with an offset. `agent_start`, `agent_end`, and `settled` use `EventBase`; every other event uses `TurnEventBase`.
+- `timestamp` 是带时区偏移的 ISO-8601 字符串。
+- `agent_start`、`agent_end`、`settled` 使用 `EventBase`。
+- 其余事件使用 `TurnEventBase`。
 
-Events are emitted through a single-writer chain. The runtime awaits the session append before invoking the sink, so an event recorded in the log is exactly the event a client observes.
+事件通过单写者发射链输出。运行时先等待会话追加完成，再调用事件消费者。因此“已写入日志的事件”与“客户端观察到的事件”是同一个对象、同一顺序。
 
-## Lifecycle
+## 2. 生命周期
 
-```
+```text
 agent_start
-  turn_start              turnNumber and the user input
+  turn_start              turnNumber + 用户输入
     user_message          delivery = prompt | steer | follow_up
-    message_start         assistant message
-      message_delta       text | reasoning | tool_call chunks
-    message_end           stopReason + optional usage
-    tool_call_start       one per finalized call, after message_end
+    message_start         assistant 消息
+      message_delta       text | reasoning | tool_call 增量
+    message_end           stopReason + 可选 usage
+    tool_call_start       每个最终确定的调用一次，位于 message_end 之后
       tool_execution_start
-      tool_execution_update   zero or more chunks
-      tool_execution_end      normalized ToolResult
-    ...                   the model is called again while tool calls or steering exist
-  turn_end                stopReason and the summed turn usage
+      tool_execution_update   零到多个输出块
+      tool_execution_end      归一化后的 ToolResult
+    ...                   存在工具调用或 steer 时再次调用模型
+  turn_end                stopReason + 本轮汇总 usage
 agent_end
 settled
 ```
 
-`agent_start` and `agent_end` bracket a run of queued turns. `settled` is emitted once the run loop drains every prompt, steer, and follow-up queue.
+`agent_start` 与 `agent_end` 包住一串排队的轮次。`settled` 在 prompt、steer、follow-up 三个队列全部排空后发出一次。
 
-A provider error produces `error` before `message_end` (when a message started) and `turn_end`, both with `stopReason: "error"`. A tool failure never ends the turn by itself: it becomes a `tool_execution_end` result with `isError: true` and an `error` content part, and the model receives that result on the next call.
+provider 出错时，如果消息已开始，会先发 `error`，再发 `message_end`；随后 `turn_end` 以 `stopReason: "error"` 结束。工具失败本身不会结束本轮：它变成 `tool_execution_end` 中 `isError: true` 的结果，模型在下一次调用中收到错误内容。
 
-## Delivery semantics
+## 3. 投递语义
 
-| Delivery    | Enqueue point    | Effect                                                                                                                      |
-| ----------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `prompt`    | `prompt(text)`   | Starts a turn when idle; becomes a follow-up turn if a turn is active.                                                      |
-| `steer`     | `steer(text)`    | Appended after the current model step; triggers another model call in the same turn. An idle runtime treats it as a prompt. |
-| `follow_up` | `followUp(text)` | Runs as a new turn after the current turn ends.                                                                             |
+| delivery | 入队点 | 效果 |
+| --- | --- | --- |
+| `prompt` | `prompt(text)` | 空闲时启动新轮；有活动轮时转为 follow-up |
+| `steer` | `steer(text)` | 当前模型步骤结束后注入，触发同一轮内再次调用模型；空闲运行时当作 prompt |
+| `follow_up` | `followUp(text)` | 当前轮结束后作为新轮执行 |
 
-`interrupt(reason)` aborts the active provider stream or tool batch. Drained tool calls receive an `aborted` error result, the turn ends with `stopReason: "aborted"`, and the runtime returns to `idle` so a later prompt succeeds.
+`interrupt(reason)` 中止活动的 provider 流或工具批。已在执行的工具调用得到 `aborted` 错误结果，本轮以 `stopReason: "aborted"` 结束，运行时回到 `idle`，后续 prompt 仍可成功。
 
-## Event types
+## 4. 事件类型
 
-| Type                    | Payload                                                               |
-| ----------------------- | --------------------------------------------------------------------- |
-| `agent_start`           | none                                                                  |
-| `agent_end`             | none                                                                  |
-| `turn_start`            | `turnNumber`, `input`                                                 |
-| `turn_end`              | `stopReason`, optional `usage`                                        |
-| `user_message`          | `messageId`, `delivery`, `message`                                    |
-| `message_start`         | `messageId`, `role: "assistant"`                                      |
-| `message_delta`         | `messageId`, `delta`                                                  |
-| `message_end`           | `messageId`, `stopReason`, optional `usage`                           |
-| `tool_call_start`       | `messageId`, `call`                                                   |
-| `tool_execution_start`  | `toolCallId`, `name`                                                  |
-| `tool_execution_update` | `toolCallId`, `chunk`                                                 |
-| `tool_execution_end`    | `toolCallId`, `result`                                                |
-| `approval_requested`    | `approval`                                                            |
-| `approval_resolved`     | `approvalId`, `resolution`                                            |
-| `sandbox_decision`      | `decision`                                                            |
-| `compaction_start`      | `reason` (`threshold`, `overflow`, `manual`)                          |
-| `compaction_end`        | `summary`, `replacedEntryIds`, `tokensBefore`, `tokensAfter`, `model` |
-| `error`                 | `error`                                                               |
-| `settled`               | none                                                                  |
+| 类型 | 负载 |
+| --- | --- |
+| `agent_start` | 无 |
+| `agent_end` | 无 |
+| `turn_start` | `turnNumber`、`input` |
+| `turn_end` | `stopReason`、可选 `usage` |
+| `user_message` | `messageId`、`delivery`、`message` |
+| `message_start` | `messageId`、`role: "assistant"` |
+| `message_delta` | `messageId`、`delta` |
+| `message_end` | `messageId`、`stopReason`、可选 `usage` |
+| `tool_call_start` | `messageId`、`call` |
+| `tool_execution_start` | `toolCallId`、`name` |
+| `tool_execution_update` | `toolCallId`、`chunk` |
+| `tool_execution_end` | `toolCallId`、`result` |
+| `approval_requested` | `approval` |
+| `approval_resolved` | `approvalId`、`resolution` |
+| `sandbox_decision` | `decision` |
+| `compaction_start` | `reason`（`threshold`、`overflow`、`manual`） |
+| `compaction_end` | `summary`、`replacedEntryIds`、`tokensBefore`、`tokensAfter`、`model` |
+| `error` | `error` |
+| `settled` | 无 |
 
-`usage` totals input, output, and optional cache-read/cache-write tokens. A turn's usage is the sum of its model steps; a failed or aborted step contributes only usage the provider reported.
+`message_delta` 有三种：
 
-## Error normalization
+```ts
+{ kind: "text"; text: string }
+{ kind: "reasoning"; text: string }
+{ kind: "tool_call"; index: number; id?: string; name?: string; argumentsDelta?: string }
+```
 
-`NormalizedError` is `{ code, message, retryable, details? }`.
+`usage` 统计输入、输出，以及可选的缓存读/写 token。一轮的用量是各模型步骤之和；失败或中止的步骤只贡献 provider 已上报的用量。
 
-| Source                               | Code                                 |
-| ------------------------------------ | ------------------------------------ |
-| Provider `error` event               | provider-supplied code, preserved    |
-| Provider stream ended without `done` | `provider_stream_incomplete`         |
-| Provider transport threw             | normalized through `providerFailure` |
-| Tool input failed JSON parsing       | `invalid_arguments`                  |
-| Tool input failed Zod validation     | `validation_error`                   |
-| Unknown tool name                    | `unknown_tool`                       |
-| Tool threw                           | `execution_error`                    |
-| Aborted tool call                    | `aborted`                            |
-| Tool call with no executor           | `no_executor`                        |
-| Model-call limit exceeded            | `max_model_calls`                    |
+### 当前发射状态
 
-Provider and tool failures are data, not thrown control flow: the runtime turns them into `error` events or error `ToolResult` values, leaves the session `idle`, and accepts a later prompt.
+- 已由运行时发出：`agent_start`、`agent_end`、`turn_start`、`turn_end`、`user_message`、`message_start`、`message_delta`、`message_end`、`tool_call_start`、`tool_execution_start`、`tool_execution_update`、`tool_execution_end`、`error`、`settled`。
+- schema 已定义、但对应子系统尚未接入：`approval_requested`、`approval_resolved`、`sandbox_decision`、`compaction_start`、`compaction_end`。
 
-## Fixtures
+## 5. 错误归一化
 
-Recorded sequences with fixed clocks and ids live in `packages/core/test/fixtures/events/`:
+`NormalizedError` 的结构：
 
-- `tool-turn.json`: tool call, execution, second model step, and turn completion.
-- `provider-error.json`: provider failure, error turn end, and recovery availability.
+```ts
+{ code: string; message: string; retryable: boolean; details?: Record<string, unknown> }
+```
 
-`packages/core/test/runtime/events-fixture.test.ts` replays each scripted provider turn and asserts deep equality with the fixture, so any accidental ordering or payload change fails the suite.
+| 来源 | code |
+| --- | --- |
+| provider 的 `error` 事件 | 保留 provider 提供的 code |
+| provider 流结束但没有 `done` | `provider_stream_incomplete` |
+| provider transport 抛错 | `provider_error`（经 `providerFailure` 归一化） |
+| 工具参数不是合法 JSON | `invalid_arguments` |
+| 工具参数未通过 Zod 校验 | `validation_error` |
+| 未知工具名 | `unknown_tool` |
+| 工具执行抛错 | `execution_error` |
+| 工具调用被中止 | `aborted` |
+| 没有配置工具执行器 | `no_executor` |
+| 执行器没有返回对应结果 | `missing_result` |
+| 单轮模型调用超限 | `max_model_calls` |
+
+`pi-ai` 适配器把中止映射为 `aborted`，其他失败映射为 `provider_error`。
+
+provider 与工具失败都是数据，不是抛出的控制流：运行时把它们变成 `error` 事件或错误 `ToolResult`，让会话回到 `idle`，并接受后续 prompt。
+
+## 6. Fixture
+
+固定时钟与固定 ID 的事件序列位于：
+
+- `packages/core/test/fixtures/events/tool-turn.json`：工具调用、执行、第二次模型步骤与轮次结束。
+- `packages/core/test/fixtures/events/provider-error.json`：provider 失败、错误轮次结束与恢复能力。
+
+`packages/core/test/runtime/events-fixture.test.ts` 用脚本化 provider 重放每个轮次，并与 fixture 做深比较。任何意外的事件顺序或负载变化都会让测试失败。

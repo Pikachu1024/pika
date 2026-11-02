@@ -8,6 +8,13 @@ export interface ToolContext {
   turnId: string;
   toolCallId: string;
   signal: AbortSignal;
+  /** Streams incremental output to a tool_execution_update event. */
+  onUpdate(chunk: string): void;
+}
+
+export interface ToolOutputStore {
+  /** Persists complete output and returns a reference the model can cite. */
+  write(toolCallId: string, content: string): Promise<string>;
 }
 
 export interface Tool {

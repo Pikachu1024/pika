@@ -5,6 +5,10 @@ export interface ExecRequest {
   args: string[];
   cwd: string;
   stdin?: string;
+  /** Cancels the execution and terminates its process group. */
+  signal?: AbortSignal;
+  /** Receives decoded stdout and stderr chunks while the process runs. */
+  onOutput?: (chunk: string) => void;
 }
 
 export interface ExecResult {

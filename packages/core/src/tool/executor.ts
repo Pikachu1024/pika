@@ -1,5 +1,11 @@
-import type { ToolCall, ToolResult } from "@pika-harness/schema";
-import type { Tool, ToolBatchContext, ToolExecutor, ToolOutput } from "../tools.js";
+import type { ContentPart, ToolCall, ToolResult } from "@pika-harness/schema";
+import type {
+  Tool,
+  ToolBatchContext,
+  ToolExecutor,
+  ToolOutput,
+  ToolOutputStore,
+} from "../tools.js";
 import type { ToolRegistry } from "./registry.js";
 
 interface ValidCall {
@@ -9,6 +15,13 @@ interface ValidCall {
   args: unknown;
 }
 
+export interface ToolBatchExecutorOptions {
+  maxOutputBytes?: number;
+  outputStore?: ToolOutputStore;
+}
+
+const defaultMaxOutputBytes = 1_048_576;
+
 type PreflightResult =
   | { ok: true; entry: ValidCall }
   | { ok: false; index: number; result: ToolResult };
@@ -16,9 +29,13 @@ type PreflightResult =
 /** Validates a batch, then runs independent calls concurrently and conflicting calls in order. */
 export class ToolBatchExecutor implements ToolExecutor {
   readonly #registry: ToolRegistry;
+  readonly #maxOutputBytes: number;
+  readonly #outputStore: ToolOutputStore | undefined;
 
-  constructor(registry: ToolRegistry) {
+  constructor(registry: ToolRegistry, options: ToolBatchExecutorOptions = {}) {
     this.#registry = registry;
+    this.#maxOutputBytes = options.maxOutputBytes ?? defaultMaxOutputBytes;
+    this.#outputStore = options.outputStore;
   }
 
   async execute(calls: ToolCall[], context: ToolBatchContext): Promise<ToolResult[]> {
@@ -95,10 +112,11 @@ export class ToolBatchExecutor implements ToolExecutor {
           turnId: context.turnId,
           toolCallId: call.id,
           signal: context.signal,
+          onUpdate: (chunk) => context.onUpdate(call, chunk),
         },
         args,
       );
-      result = { ...output, toolCallId: call.id };
+      result = await this.#normalizeOutput({ ...output, toolCallId: call.id });
     } catch (error) {
       result = errorResult(
         call,
@@ -109,6 +127,47 @@ export class ToolBatchExecutor implements ToolExecutor {
 
     context.onEnd(call, result);
     return result;
+  }
+
+  async #normalizeOutput(output: ToolOutput & { toolCallId: string }): Promise<ToolResult> {
+    const textParts = output.content.filter((part) => part.type === "text");
+    if (textParts.length === 0) {
+      return output;
+    }
+    const combined = textParts.map((part) => part.text).join("\n");
+    const totalBytes = Buffer.byteLength(combined, "utf8");
+    if (totalBytes <= this.#maxOutputBytes) {
+      return output;
+    }
+
+    const { head, tail } = splitForTruncation(combined, this.#maxOutputBytes);
+    const reference =
+      this.#outputStore === undefined
+        ? undefined
+        : await this.#outputStore.write(output.toolCallId, combined).catch(() => undefined);
+    const marker =
+      reference === undefined
+        ? `\n... [truncated ${totalBytes - this.#maxOutputBytes} bytes; full output not persisted] ...\n`
+        : `\n... [truncated ${totalBytes - this.#maxOutputBytes} bytes; full output: ${reference}] ...\n`;
+    let replaced = false;
+    const content: ContentPart[] = [];
+    for (const part of output.content) {
+      if (part.type !== "text") {
+        content.push(part);
+        continue;
+      }
+      if (replaced) continue;
+      replaced = true;
+      content.push({ type: "text", text: `${head}${marker}${tail}` });
+    }
+
+    return {
+      toolCallId: output.toolCallId,
+      content,
+      isError: output.isError,
+      ...(output.details === undefined ? {} : { details: output.details }),
+      ...(reference === undefined ? {} : { fullOutputRef: reference }),
+    };
   }
 }
 
@@ -182,4 +241,26 @@ function abortMessage(signal: AbortSignal): string {
 function errorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message === "" ? "unknown error" : message;
+}
+
+function splitForTruncation(text: string, maxBytes: number): { head: string; tail: string } {
+  const buffer = Buffer.from(text, "utf8");
+  const headBytes = Math.max(1, Math.floor(maxBytes * 0.6));
+  const tailBytes = Math.max(0, maxBytes - headBytes);
+  let headEnd = Math.min(headBytes, buffer.length);
+  while (headEnd > 0 && isContinuationByte(buffer[headEnd] ?? 0)) {
+    headEnd -= 1;
+  }
+  let tailStart = Math.max(0, buffer.length - tailBytes);
+  while (tailStart < buffer.length && isContinuationByte(buffer[tailStart] ?? 0)) {
+    tailStart += 1;
+  }
+  return {
+    head: buffer.subarray(0, headEnd).toString("utf8"),
+    tail: buffer.subarray(tailStart).toString("utf8"),
+  };
+}
+
+function isContinuationByte(value: number): boolean {
+  return (value & 0xc0) === 0x80;
 }

@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@mariozechner/pi-ai": "0.73.1",
     "@pika-harness/core": "workspace:*",
     "@pika-harness/schema": "workspace:*"
   }

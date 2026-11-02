@@ -15,7 +15,7 @@ export interface ProviderTool {
 export type LlmMessage =
   | { role: "user"; content: ContentPart[] }
   | { role: "assistant"; content: ContentPart[]; toolCalls?: ToolCall[] }
-  | { role: "tool"; toolCallId: string; content: ContentPart[] };
+  | { role: "tool"; toolCallId: string; toolName?: string; content: ContentPart[] };
 
 export interface LlmRequest {
   model: string;

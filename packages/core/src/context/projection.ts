@@ -112,6 +112,7 @@ function buildMessages(branch: SessionEntry[]): LlmMessage[] {
 
   const records: ProjectedRecord[] = [];
   const drafts = new Map<string, AssistantDraft>();
+  const toolNames = new Map<string, string>();
 
   const draftFor = (messageId: string): AssistantDraft => {
     const existing = drafts.get(messageId);
@@ -159,18 +160,22 @@ function buildMessages(branch: SessionEntry[]): LlmMessage[] {
         break;
       }
       case "tool_call_start":
+        toolNames.set(event.call.id, event.call.name);
         draftFor(event.messageId).toolCalls.push(cloneToolCall(event.call));
         break;
-      case "tool_execution_end":
+      case "tool_execution_end": {
+        const toolName = toolNames.get(event.toolCallId);
         records.push({
           kind: "message",
           message: {
             role: "tool",
             toolCallId: event.toolCallId,
+            ...(toolName === undefined ? {} : { toolName }),
             content: cloneContent(event.result.content),
           },
         });
         break;
+      }
       default:
         break;
     }

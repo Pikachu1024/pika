@@ -469,7 +469,12 @@ class SingleWriterRuntime implements AgentRuntime {
         await this.#emitToolExecutionStart(turn, call);
         const result = errorToolResult(call.id, "no tool executor is configured", "no_executor");
         await this.#emitToolExecutionEnd(turn, call.id, result);
-        this.#history.push({ role: "tool", toolCallId: call.id, content: result.content });
+        this.#history.push({
+          role: "tool",
+          toolCallId: call.id,
+          toolName: call.name,
+          content: result.content,
+        });
       }
       return;
     }
@@ -545,7 +550,12 @@ class SingleWriterRuntime implements AgentRuntime {
     for (const call of calls) {
       const result = results.get(call.id);
       if (result !== undefined) {
-        this.#history.push({ role: "tool", toolCallId: call.id, content: result.content });
+        this.#history.push({
+          role: "tool",
+          toolCallId: call.id,
+          toolName: call.name,
+          content: result.content,
+        });
       }
     }
   }

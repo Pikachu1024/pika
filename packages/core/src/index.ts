@@ -63,5 +63,24 @@ export type {
 export { MemorySessionStore } from "./session/memory-store.js";
 export type { SessionStore } from "./session-store.js";
 export { ToolBatchExecutor } from "./tool/executor.js";
+export type { EditFileToolOptions } from "./tool/file/edit-file.js";
+export { createEditFileTool, EditFileArgsSchema } from "./tool/file/edit-file.js";
+export type { ReadFileToolOptions } from "./tool/file/read-file.js";
+export { createReadFileTool, ReadFileArgsSchema } from "./tool/file/read-file.js";
+export type { WriteFileToolOptions } from "./tool/file/write-file.js";
+export { createWriteFileTool, WriteFileArgsSchema } from "./tool/file/write-file.js";
 export { ToolRegistry } from "./tool/registry.js";
-export type { Tool, ToolBatchContext, ToolContext, ToolExecutor, ToolOutput } from "./tools.js";
+export type { BashToolOptions } from "./tool/shell/bash.js";
+export { BashArgsSchema, createBashTool } from "./tool/shell/bash.js";
+export type { GlobToolOptions } from "./tool/shell/glob.js";
+export { createGlobTool, GlobArgsSchema } from "./tool/shell/glob.js";
+export type { GrepToolOptions } from "./tool/shell/grep.js";
+export { createGrepTool, GrepArgsSchema } from "./tool/shell/grep.js";
+export type {
+  Tool,
+  ToolBatchContext,
+  ToolContext,
+  ToolExecutor,
+  ToolOutput,
+  ToolOutputStore,
+} from "./tools.js";

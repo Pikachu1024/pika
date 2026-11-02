@@ -9,7 +9,7 @@
 ## 2. Runtime and provider boundary
 
 - [x] 2.1 Implement the `Provider` interface, `LlmEvent` normalization, and a faux provider with scripted streams; verify deterministic streaming tests cover text, reasoning, tool-call chunks, usage, and errors.
-- [ ] 2.2 Implement a `pi-ai` adapter for one OpenAI-compatible endpoint; verify adapter tests with a mocked transport and document an optional live smoke test.
+- [x] 2.2 Implement a `pi-ai` adapter for one OpenAI-compatible endpoint; verify adapter tests with a mocked transport and document an optional live smoke test.
 - [ ] 2.3 Implement the single-writer runtime state machine and serialized command queue; verify transition tests cover idle, streaming, tool-calling, compacting, and aborted states.
 - [x] 2.4 Implement the turn loop with lifecycle events, steering, follow-up, interrupt, and settled; verify event-order tests for a tool turn, a steered turn, a queued follow-up, and an interrupt.
 - [x] 2.5 Implement error normalization so provider and tool failures become events or tool results, document the event contract in `docs/events.md`, and add fixtures; verify a failed request leaves the session idle, a later prompt succeeds, and fixtures match emitted events.
@@ -31,7 +31,7 @@
 ## 5. Sandbox
 
 - [x] 5.1 Define `SandboxPolicy`, `Executor`, `NoopExecutor`, and `PathPolicy`; verify policy resolution and path tests cover read-only, workspace-write, outside-workspace writes, `..` traversal, and symlink escapes.
-- [ ] 5.2 Implement child process construction with an explicit environment allowlist, no login shell, a detached process group, timeout, and output cap; verify environment scrubbing, startup-file isolation, and orphan cleanup tests.
+- [x] 5.2 Implement child process construction with an explicit environment allowlist, no login shell, a detached process group, timeout, and output cap; verify environment scrubbing, startup-file isolation, and orphan cleanup tests.
 - [ ] 5.3 Implement sandbox decision events and the audit trail; verify decisions appear in the session log and in replay with the same outcome and reason.
 - [ ] 5.4 Implement approval integration and the escalation flow; verify deny, accept-for-session, decline, and retry paths.
 - [ ] 5.5 Implement the macOS Seatbelt executor with generated profiles; verify the conformance suite for filesystem, environment, child-process inheritance, and orphan cleanup on macOS.
@@ -43,9 +43,9 @@
 
 - [x] 6.1 Implement the tool registry, schema validation, unknown-tool handling, and validation-error results; verify invalid input produces an error result and no side effect.
 - [x] 6.2 Implement the executor with preflight, parallel independent calls, serialized write conflicts, and result ordering; verify a mixed read/write batch test.
-- [ ] 6.3 Implement `read_file`, `write_file`, and `edit_file` behind `PathPolicy`; verify outside-workspace, symlink, and nonexistent-path tests.
-- [ ] 6.4 Implement `bash`, `grep`, and `glob` behind `Executor`, including truncation, persisted full output, and start/update/end events; verify oversized-output, exit-code, and long-running command tests.
-- [ ] 6.5 Document the tool contract and v0 tool set in `docs/tools.md`; verify the documented examples pass as tests.
+- [x] 6.3 Implement `read_file`, `write_file`, and `edit_file` behind `PathPolicy`; verify outside-workspace, symlink, and nonexistent-path tests.
+- [x] 6.4 Implement `bash`, `grep`, and `glob` behind `Executor`, including truncation, persisted full output, and start/update/end events; verify oversized-output, exit-code, and long-running command tests.
+- [x] 6.5 Document the tool contract and v0 tool set in `docs/tools.md`; verify the documented examples pass as tests.
 
 ## 7. Protocol, SDK, and CLI
 

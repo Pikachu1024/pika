@@ -38,8 +38,12 @@ pnpm check   # all of the above
 
 ## Documentation
 
+- [Overall design](docs/design.md)
+- [Framework selection](docs/framework-selection.md)
 - [Architecture](docs/architecture.md)
 - [Event contract](docs/events.md)
+- [Providers](docs/providers.md)
+- [Tools](docs/tools.md)
 - [Foundation proposal](openspec/changes/agent-harness-foundation/proposal.md)
 - [Foundation design](openspec/changes/agent-harness-foundation/design.md)
 - [Implementation tasks](openspec/changes/agent-harness-foundation/tasks.md)

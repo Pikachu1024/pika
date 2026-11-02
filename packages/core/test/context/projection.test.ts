@@ -175,7 +175,12 @@ describe("createContextProjector", () => {
         content: [{ type: "text", text: "I will read." }],
         toolCalls: [{ id: "call_1", name: "read_file", arguments: '{"path":"a"}' }],
       },
-      { role: "tool", toolCallId: "call_1", content: [{ type: "text", text: "contents" }] },
+      {
+        role: "tool",
+        toolCallId: "call_1",
+        toolName: "read_file",
+        content: [{ type: "text", text: "contents" }],
+      },
       { role: "assistant", content: [{ type: "text", text: "Done." }] },
     ]);
     expect(JSON.stringify(messages)).not.toContain("hidden reasoning");
