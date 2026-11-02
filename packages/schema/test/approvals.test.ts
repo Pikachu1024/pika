@@ -25,9 +25,9 @@ describe("ApprovalRequestSchema", () => {
   });
 
   it("accepts a sandbox escalation request", () => {
-    expect(ApprovalRequestSchema.safeParse({ ...request, kind: "sandbox-escalation" }).success).toBe(
-      true,
-    );
+    expect(
+      ApprovalRequestSchema.safeParse({ ...request, kind: "sandbox-escalation" }).success,
+    ).toBe(true);
   });
 
   it("rejects a missing reason", () => {
@@ -36,7 +36,9 @@ describe("ApprovalRequestSchema", () => {
   });
 
   it("rejects non-object args", () => {
-    expect(ApprovalRequestSchema.safeParse({ ...request, args: "rm -rf build" }).success).toBe(false);
+    expect(ApprovalRequestSchema.safeParse({ ...request, args: "rm -rf build" }).success).toBe(
+      false,
+    );
   });
 });
 
@@ -46,8 +48,8 @@ describe("ApprovalResolutionSchema", () => {
   });
 
   it("rejects an unknown decision", () => {
-    expect(
-      ApprovalResolutionSchema.safeParse({ ...resolution, decision: "maybe" }).success,
-    ).toBe(false);
+    expect(ApprovalResolutionSchema.safeParse({ ...resolution, decision: "maybe" }).success).toBe(
+      false,
+    );
   });
 });

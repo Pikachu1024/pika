@@ -2,7 +2,7 @@
 
 A learning-first TypeScript agent harness. The goal is to understand harness engineering by building the core loop, context pipeline, tool system, sandbox, session store, and protocol, while reusing proven libraries for providers and terminal UI.
 
-Status: foundation. The repository currently contains the workspace scaffold and the OpenSpec change that defines the architecture. Runtime code lands in later tasks.
+Status: foundation. Implemented and tested: the normalized event schema, single-writer turn loop, faux provider, in-memory and JSONL session stores, sandbox policy and path policy, prompt builder with `AGENTS.md` discovery, context projection, token estimation and compaction planning, and the tool registry and batch executor. Provider adapters, real sandbox executors, protocol, SDK/CLI, and skills/MCP remain.
 
 ## Layout
 
@@ -39,6 +39,7 @@ pnpm check   # all of the above
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Event contract](docs/events.md)
 - [Foundation proposal](openspec/changes/agent-harness-foundation/proposal.md)
 - [Foundation design](openspec/changes/agent-harness-foundation/design.md)
 - [Implementation tasks](openspec/changes/agent-harness-foundation/tasks.md)

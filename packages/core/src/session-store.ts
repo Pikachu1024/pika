@@ -1,9 +1,4 @@
-import type {
-  AgentEvent,
-  SessionEntry,
-  SessionMeta,
-  SessionSummary,
-} from "@pika-harness/schema";
+import type { AgentEvent, SessionEntry, SessionMeta, SessionSummary } from "@pika-harness/schema";
 
 export interface SessionStore {
   create(meta: SessionMeta): Promise<void>;

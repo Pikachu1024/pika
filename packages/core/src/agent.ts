@@ -1,7 +1,7 @@
-import type { SessionStore } from "./session-store.js";
 import type { Clock, IdGenerator } from "./clock.js";
 import type { EventSink } from "./events.js";
 import type { Provider, ProviderTool } from "./provider.js";
+import type { SessionStore } from "./session-store.js";
 import type { ToolExecutor } from "./tools.js";
 
 export type AgentState = "idle" | "streaming" | "tool-calling" | "compacting" | "aborted";

@@ -13,6 +13,8 @@ export interface SystemPromptInput {
   skillIndex?: Array<{ name: string; description: string }>;
   toolGuidance?: string;
   mode?: "plan" | "execute" | "review";
+  toolsAdded?: string[];
+  toolsRemoved?: string[];
 }
 
 export interface SystemPromptDocument {

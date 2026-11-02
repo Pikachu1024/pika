@@ -1,0 +1,142 @@
+[
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "type": "agent_start"
+  },
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "turnId": "turn_1",
+    "type": "turn_start",
+    "turnNumber": 1,
+    "input": { "role": "user", "text": "read a.txt" }
+  },
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "turnId": "turn_1",
+    "type": "user_message",
+    "messageId": "msg_2",
+    "delivery": "prompt",
+    "message": { "role": "user", "text": "read a.txt" }
+  },
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "turnId": "turn_1",
+    "type": "message_start",
+    "messageId": "msg_3",
+    "role": "assistant"
+  },
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "turnId": "turn_1",
+    "type": "message_delta",
+    "messageId": "msg_3",
+    "delta": { "kind": "tool_call", "index": 0, "id": "call_1", "name": "read_file" }
+  },
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "turnId": "turn_1",
+    "type": "message_delta",
+    "messageId": "msg_3",
+    "delta": {
+      "kind": "tool_call",
+      "index": 0,
+      "id": "call_1",
+      "name": "read_file",
+      "argumentsDelta": "{\"path\":\"a.txt\"}"
+    }
+  },
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "turnId": "turn_1",
+    "type": "message_end",
+    "messageId": "msg_3",
+    "stopReason": "tool_use",
+    "usage": { "inputTokens": 10, "outputTokens": 4 }
+  },
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "turnId": "turn_1",
+    "type": "tool_call_start",
+    "messageId": "msg_3",
+    "call": { "id": "call_1", "name": "read_file", "arguments": "{\"path\":\"a.txt\"}" }
+  },
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "turnId": "turn_1",
+    "type": "tool_execution_start",
+    "toolCallId": "call_1",
+    "name": "read_file"
+  },
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "turnId": "turn_1",
+    "type": "tool_execution_update",
+    "toolCallId": "call_1",
+    "chunk": "partial"
+  },
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "turnId": "turn_1",
+    "type": "tool_execution_end",
+    "toolCallId": "call_1",
+    "result": {
+      "toolCallId": "call_1",
+      "content": [{ "type": "text", "text": "contents" }],
+      "isError": false
+    }
+  },
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "turnId": "turn_1",
+    "type": "message_start",
+    "messageId": "msg_4",
+    "role": "assistant"
+  },
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "turnId": "turn_1",
+    "type": "message_delta",
+    "messageId": "msg_4",
+    "delta": { "kind": "text", "text": "All done." }
+  },
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "turnId": "turn_1",
+    "type": "message_end",
+    "messageId": "msg_4",
+    "stopReason": "end",
+    "usage": { "inputTokens": 20, "outputTokens": 6 }
+  },
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "turnId": "turn_1",
+    "type": "turn_end",
+    "stopReason": "end",
+    "usage": { "inputTokens": 30, "outputTokens": 10 }
+  },
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "type": "agent_end"
+  },
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "type": "settled"
+  }
+]
