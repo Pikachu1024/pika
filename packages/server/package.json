@@ -14,6 +14,14 @@
   "dependencies": {
     "@pika-harness/adapters": "workspace:*",
     "@pika-harness/core": "workspace:*",
-    "@pika-harness/schema": "workspace:*"
+    "@pika-harness/schema": "workspace:*",
+    "ws": "8.22.1"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.2",
+    "zod": "4.6.7"
+  },
+  "bin": {
+    "pika-server": "./src/bin.ts"
   }
 }

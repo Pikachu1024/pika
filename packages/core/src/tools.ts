@@ -59,6 +59,8 @@ export interface Tool {
   name: string;
   description: string;
   schema: z.ZodType;
+  /** Provider-facing JSON Schema when it cannot be derived from `schema` (for example MCP tools). */
+  parameters?: Record<string, unknown>;
   /** Declares write or arbitrary-process behavior for sandbox classification. */
   sandbox?: ToolSandboxProfile;
   /** Returns a shared key for calls that must not run concurrently; null means independent. */

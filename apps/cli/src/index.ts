@@ -1,3 +1,1 @@
-#!/usr/bin/env node
-// Public entry point for the terminal client.
-export {};
+export { main } from "./cli.js";

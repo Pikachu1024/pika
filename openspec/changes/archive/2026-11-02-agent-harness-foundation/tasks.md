@@ -35,7 +35,7 @@
 - [x] 5.3 Implement sandbox decision events and the audit trail; verify decisions appear in the session log and in replay with the same outcome and reason.
 - [x] 5.4 Implement approval integration and the escalation flow; verify deny, accept-for-session, decline, and retry paths.
 - [x] 5.5 Implement the macOS Seatbelt executor with generated profiles; verify the conformance suite for filesystem, environment, child-process inheritance, and orphan cleanup on macOS.
-- [ ] 5.6 Implement the bubblewrap executor and a Docker executor; verify the same conformance suite in Linux CI and Docker.
+- [x] 5.6 Implement the bubblewrap executor and a Docker executor; verify the same conformance suite in Linux CI and Docker.
 - [x] 5.7 Implement network `none` enforcement, the proxy-mode interface, and policy monotonicity for child tasks; verify denied connections are recorded, an allowlisted proxy path succeeds, and a read-only parent rejects or clamps a workspace-write child request.
 - [x] 5.8 Document the sandbox threat model, policy model, backend matrix, and escalation flow in `docs/sandbox.md`; verify the documented commands match the conformance suite.
 
@@ -49,26 +49,26 @@
 
 ## 7. Protocol, SDK, and CLI
 
-- [ ] 7.1 Define JSON-RPC methods and schemas for initialize, session, turn, approval, subscription, and sandbox mode; verify schema and error-shape tests.
-- [ ] 7.2 Implement the stdio JSONL transport and the in-process transport; verify identical event sequences for the same turn over both.
-- [ ] 7.3 Implement the WebSocket transport with subscription handling; verify two subscribers receive the same events and unsubscribe stops delivery.
-- [ ] 7.4 Implement the server session manager, approval routing, and sandbox mode resolution; verify a client cannot bypass the executor.
-- [ ] 7.5 Implement the typed SDK client with session creation, prompt, steer, interrupt, event subscription, and approval response; verify an SDK-driven end-to-end test.
-- [ ] 7.6 Implement the `pi-tui` CLI as a protocol client; verify a manual smoke test and the package-boundary check showing no CLI-to-core imports.
-- [ ] 7.7 Document the protocol and SDK in `docs/protocol.md`; verify the documented request and response examples against the schema tests.
+- [x] 7.1 Define JSON-RPC methods and schemas for initialize, session, turn, approval, subscription, and sandbox mode; verify schema and error-shape tests.
+- [x] 7.2 Implement the stdio JSONL transport and the in-process transport; verify identical event sequences for the same turn over both.
+- [x] 7.3 Implement the WebSocket transport with subscription handling; verify two subscribers receive the same events and unsubscribe stops delivery.
+- [x] 7.4 Implement the server session manager, approval routing, and sandbox mode resolution; verify a client cannot bypass the executor.
+- [x] 7.5 Implement the typed SDK client with session creation, prompt, steer, interrupt, event subscription, and approval response; verify an SDK-driven end-to-end test.
+- [x] 7.6 Implement the `pi-tui` CLI as a protocol client; verify a manual smoke test and the package-boundary check showing no CLI-to-core imports.
+- [x] 7.7 Document the protocol and SDK in `docs/protocol.md`; verify the documented request and response examples against the schema tests.
 
 ## 8. Skills and MCP
 
-- [ ] 8.1 Implement Agent Skills discovery across builtin, user, project, and plugin scopes with a prompt index and lazy body loading; verify scope and selection tests.
-- [ ] 8.2 Implement stdio and streamable HTTP MCP lifecycle, OAuth, namespacing, exposure filters, crash/reconnect handling, and project trust gating; verify crash, reconnection, untrusted-project, and namespaced-tool tests.
-- [ ] 8.3 Document skills and MCP configuration in `docs/extensions.md`; verify documented configurations load in tests.
+- [x] 8.1 Implement Agent Skills discovery across builtin, user, project, and plugin scopes with a prompt index and lazy body loading; verify scope and selection tests.
+- [x] 8.2 Implement stdio and streamable HTTP MCP lifecycle, OAuth, namespacing, exposure filters, crash/reconnect handling, and project trust gating; verify crash, reconnection, untrusted-project, and namespaced-tool tests.
+- [x] 8.3 Document skills and MCP configuration in `docs/extensions.md`; verify documented configurations load in tests.
 
 ## 9. Integration checks
 
-- [ ] 9.1 Run an end-to-end faux-provider session through the CLI protocol covering prompt, tool call, approval, tool result, and final message; verify the session log and replay.
-- [ ] 9.2 Run the sandbox conformance suite against every available backend; verify all required cases pass or are explicitly marked unsupported.
-- [ ] 9.3 Run replay determinism across a process restart and after index deletion, then run typecheck, lint, boundary check, and the full test suite; verify prompt hashes and session listings match and all checks pass.
-- [ ] 9.4 Run a long-session performance smoke with compaction; verify the session remains responsive and compaction records expected token reductions.
+- [x] 9.1 Run an end-to-end faux-provider session through the CLI protocol covering prompt, tool call, approval, tool result, and final message; verify the session log and replay.
+- [x] 9.2 Run the sandbox conformance suite against every available backend; verify all required cases pass or are explicitly marked unsupported.
+- [x] 9.3 Run replay determinism across a process restart and after index deletion, then run typecheck, lint, boundary check, and the full test suite; verify prompt hashes and session listings match and all checks pass.
+- [x] 9.4 Run a long-session performance smoke with compaction; verify the session remains responsive and compaction records expected token reductions.
 
 ## Workflow follow-up
 

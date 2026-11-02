@@ -17,7 +17,9 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "boundary": "node scripts/check-boundaries.mjs",
-    "check": "pnpm typecheck && pnpm lint && pnpm boundary && pnpm test"
+    "check": "pnpm typecheck && pnpm lint && pnpm boundary && pnpm test",
+    "server": "tsx packages/server/src/bin.ts",
+    "cli": "tsx apps/cli/src/bin.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",
@@ -28,7 +30,9 @@
     "@pika-harness/schema": "workspace:*",
     "@pika-harness/server": "workspace:*",
     "@types/node": "24.19.2",
+    "tsx": "4.23.15",
     "typescript": "5.9.3",
-    "vitest": "3.2.7"
+    "vitest": "3.2.7",
+    "zod": "4.6.7"
   }
 }

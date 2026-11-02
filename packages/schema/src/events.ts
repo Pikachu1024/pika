@@ -9,7 +9,12 @@ import {
   ToolCallIdSchema,
   TurnIdSchema,
 } from "./ids.js";
-import { SandboxDecisionSchema } from "./sandbox.js";
+import {
+  NetworkPolicySchema,
+  SandboxBackendSchema,
+  SandboxDecisionSchema,
+  SandboxModeSchema,
+} from "./sandbox.js";
 import { TimestampSchema } from "./timestamp.js";
 import { DeliverySchema, StopReasonSchema, UserMessageSchema } from "./turns.js";
 import { UsageSchema } from "./usage.js";
@@ -134,6 +139,13 @@ export const AgentEventSchema = zod.discriminatedUnion("type", [
   TurnEventBaseSchema.extend({
     type: zod.literal("sandbox_decision"),
     decision: SandboxDecisionSchema,
+  }),
+  EventBaseSchema.extend({
+    type: zod.literal("sandbox_policy"),
+    backend: SandboxBackendSchema,
+    mode: SandboxModeSchema,
+    network: NetworkPolicySchema,
+    reason: zod.string().min(1),
   }),
   TurnEventBaseSchema.extend({
     type: zod.literal("compaction_start"),

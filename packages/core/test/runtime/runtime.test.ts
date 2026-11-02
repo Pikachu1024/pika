@@ -188,10 +188,7 @@ describe("runtime turn loop", () => {
       expect(event.sessionId).toBe("session_test");
       expect(event.timestamp).toBe(fixedTimestamp);
     }
-    const turnScoped = sink.events.filter(
-      (event) =>
-        event.type !== "agent_start" && event.type !== "agent_end" && event.type !== "settled",
-    );
+    const turnScoped = sink.events.filter((event) => "turnId" in event);
     for (const event of turnScoped) {
       expect(event.turnId).toBe("turn_1");
     }

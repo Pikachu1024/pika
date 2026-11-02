@@ -66,5 +66,7 @@ export interface AgentRuntime {
   steer(text: string): Promise<void>;
   followUp(text: string): Promise<void>;
   interrupt(reason?: string): Promise<void>;
+  /** Replaces the effective sandbox policy and records the change in the session log. */
+  setSandboxPolicy(policy: SandboxPolicy, reason?: string): Promise<void>;
   settled(): Promise<void>;
 }

@@ -30,14 +30,14 @@ apps/cli                 packages/server                  packages/client
 
 实际依赖以各 `package.json` 为准：
 
-| 工作区                   | 依赖                                    |
-| ------------------------ | --------------------------------------- |
-| `@pika-harness/schema`   | `zod`，不依赖任何工作区包               |
-| `@pika-harness/core`     | `schema`、`zod`                         |
-| `@pika-harness/adapters` | `core`、`schema`、`@mariozechner/pi-ai` |
-| `@pika-harness/server`   | `schema`、`core`、`adapters`            |
-| `@pika-harness/client`   | `schema`                                |
-| `@pika-harness/cli`      | `schema`、`client`                      |
+| 工作区                   | 依赖                                                                        |
+| ------------------------ | --------------------------------------------------------------------------- |
+| `@pika-harness/schema`   | `zod`，不依赖任何工作区包                                                   |
+| `@pika-harness/core`     | `schema`、`zod`                                                             |
+| `@pika-harness/adapters` | `core`、`schema`、`@mariozechner/pi-ai`、`@modelcontextprotocol/sdk`、`zod` |
+| `@pika-harness/server`   | `schema`、`core`、`adapters`                                                |
+| `@pika-harness/client`   | `schema`                                                                    |
+| `@pika-harness/cli`      | `schema`、`client`                                                          |
 
 依赖方向是单向的。`core` 不导入具体存储、具体 provider 或任何客户端；`adapters` 实现 `core` 声明的端口；`server` 负责组装。
 
@@ -47,10 +47,10 @@ apps/cli                 packages/server                  packages/client
 | ------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `packages/schema`   | 协议消息、规范化事件、会话记录、审批、沙箱策略与决策的 Zod 契约                                            |
 | `packages/core`     | 单写者运行时、provider/executor/session 端口、上下文投影、提示词、工具注册表与批量执行、沙箱策略与路径策略 |
-| `packages/adapters` | `pi-ai` provider、进程执行器、JSONL 会话存储、工具输出存储，以及后续的 MCP 与 OS 级沙箱后端                |
-| `packages/server`   | 会话管理、订阅、审批路由、stdio/WebSocket/进程内传输（规划）                                               |
-| `packages/client`   | 基于 `schema` 的类型化协议客户端（规划）                                                                   |
-| `apps/cli`          | 基于 `pi-tui` 的终端客户端，只消费协议（规划）                                                             |
+| `packages/adapters` | `pi-ai` provider、进程执行器与 OS 沙箱后端、JSONL/SQLite 存储、Skills 发现、MCP 生命周期                   |
+| `packages/server`   | 会话管理、订阅、审批路由、stdio/WebSocket/进程内传输                                                       |
+| `packages/client`   | 基于 `schema` 的类型化协议客户端                                                                           |
+| `apps/cli`          | 基于 `pi-tui` 的终端客户端，只消费协议                                                                     |
 
 ## 4. 数据流
 
@@ -69,7 +69,7 @@ AgentRuntime（单写者）
      v
 AgentEvent --+--> EventSink（进程内消费者、测试）
              +--> SessionStore.append（JSONL）
-             +--> （规划）Server transport -> 协议帧
+             +--> Server transport -> 协议帧
 ```
 
 读取与回放路径：
@@ -122,21 +122,20 @@ provider 凭据只保留在 harness 进程内，不传给工具子进程。子�
 
 ## 7. 当前状态
 
-| 区域                                         | 状态                                                                                     |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `schema`                                     | 事件、会话、轮次、审批、沙箱策略与决策、内容块、用量、ID、时间戳契约已实现并有测试       |
-| `core` 运行时                                | 单写者循环、prompt/steer/follow-up/interrupt、settled、模型调用上限、事件发射已实现      |
-| `core` provider                              | `Provider`/`LlmEvent` 边界与 `FauxProvider` 已实现                                       |
-| `core` 上下文                                | 分段提示词、`AGENTS.md` 发现、确定性投影与提示词哈希、token 估算、压缩规划已实现         |
-| `core` 工具                                  | 注册表、批量执行器、结果截断、文件工具与 shell/搜索工具已实现                            |
-| `core` 沙箱                                  | 策略解析与单调收敛、`PathPolicy`、`NoopExecutor`、`Executor` 端口已实现                  |
-| `core` 会话                                  | `SessionStore` 端口与内存实现已实现                                                      |
-| `adapters`                                   | `PiAiProvider`、`NodeProcessExecutor`、`JsonlSessionStore`、`FileToolOutputStore` 已实现 |
-| `server` / `client` / `cli`                  | 仍是占位入口，协议与传输尚未实现                                                         |
-| OS 级沙箱                                    | 尚未实现；`NodeProcessExecutor` 的 backend 为 `none`，只做进程构造与环境隔离             |
-| 审批路由、Skills、MCP、SQLite 索引、回放 CLI | 尚未实现                                                                                 |
+| 区域             | 状态                                                                                                |
+| ---------------- | --------------------------------------------------------------------------------------------------- |
+| `schema`         | 事件、会话、轮次、审批、沙箱策略与决策、内容块、用量、ID、时间戳、协议消息契约已实现并有测试        |
+| `core` 运行时    | 单写者循环、prompt/steer/follow-up/interrupt、settled、模型调用上限、事件发射已实现                 |
+| `core` provider  | `Provider`/`LlmEvent` 边界与 `FauxProvider` 已实现                                                  |
+| `core` 上下文    | 分段提示词、`AGENTS.md` 发现、确定性投影与提示词哈希、token 估算、压缩策略与运行时压缩已实现        |
+| `core` 工具      | 注册表、批量执行器、结果截断、文件工具与 shell/搜索工具已实现                                       |
+| `core` 沙箱      | 策略解析与单调收敛、`PathPolicy`、`NoopExecutor`、`Executor` 端口、审批与升级决策已实现             |
+| `core` 会话      | `SessionStore` 端口、内存实现、回放、恢复与 fork 已实现                                             |
+| `adapters`       | `PiAiProvider`、`NodeProcessExecutor`、Seatbelt/bwrap/Docker、JSONL/SQLite 存储、Skills、MCP 已实现 |
+| `server`         | 会话管理、审批路由、stdio/WebSocket/进程内传输、沙箱模式解析已实现                                  |
+| `client` / `cli` | 类型化 SDK、`pi-tui` 客户端、一次性 prompt 与交互式审批已实现                                       |
 
-实现进度以 `openspec/changes/agent-harness-foundation/tasks.md` 为准；本文只描述结构与边界是否落地。
+实现进度以归档任务列表 `openspec/changes/archive/2026-11-02-agent-harness-foundation/tasks.md` 为准；能力契约在 `openspec/specs/`。
 
 ## 8. 文档索引
 
@@ -145,4 +144,6 @@ provider 凭据只保留在 harness 进程内，不传给工具子进程。子�
 - [事件契约](events.md)：事件信封、生命周期、投递语义与错误归一化。
 - [Provider 契约](providers.md)：`LlmEvent` 与 `pi-ai` 适配细节。
 - [工具契约](tools.md)：工具接口、批量执行、内置工具与截断行为。
-- `openspec/changes/agent-harness-foundation/`：范围、需求、设计与任务的事实来源。
+- [协议与 SDK](protocol.md)：JSON-RPC 方法、三种传输、SDK 与 CLI 用法。
+- [Skills 与 MCP](extensions.md)：技能发现与懒加载、MCP 配置、生命周期与信任边界。
+- `openspec/specs/`：当前能力契约；范围与设计的历史事实来源在 `openspec/changes/archive/2026-11-02-agent-harness-foundation/`。

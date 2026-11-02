@@ -138,7 +138,7 @@ export class NodeProcessExecutor implements Executor {
 
 /** Builds a child environment from the allowlist, dropping credentials by name. */
 export function buildProcessEnvironment(
-  policy: SandboxPolicy,
+  policy: { envAllowlist: readonly string[] },
   sourceEnv: NodeJS.ProcessEnv,
   deniedEnvNames: readonly string[] = [],
 ): Record<string, string> {

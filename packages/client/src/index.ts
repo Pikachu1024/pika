@@ -1,2 +1,8 @@
-// Public entry point for the typed protocol client and transport bindings.
-export {};
+export type {
+  EventSubscription,
+  PikaClientOptions,
+  StartSessionInput,
+} from "./client.js";
+export { PikaClient, PikaProtocolError } from "./client.js";
+export type { StdioClientTransportOptions } from "./transports.js";
+export { createStdioClientTransport, createWebSocketClientTransport } from "./transports.js";

@@ -5,7 +5,7 @@
   "type": "module",
   "sideEffects": false,
   "bin": {
-    "pika": "./src/index.ts"
+    "pika": "./src/bin.ts"
   },
   "exports": {
     ".": "./src/index.ts"
@@ -15,6 +15,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@mariozechner/pi-tui": "0.73.1",
     "@pika-harness/client": "workspace:*",
     "@pika-harness/schema": "workspace:*"
   }

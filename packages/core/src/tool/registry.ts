@@ -29,7 +29,7 @@ export class ToolRegistry {
     return this.list().map((tool) => ({
       name: tool.name,
       description: tool.description,
-      parameters: z.toJSONSchema(tool.schema),
+      parameters: tool.parameters ?? z.toJSONSchema(tool.schema),
     }));
   }
 }

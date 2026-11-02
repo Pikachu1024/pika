@@ -171,6 +171,22 @@ class SingleWriterRuntime implements AgentRuntime {
     }
   }
 
+  async setSandboxPolicy(policy: SandboxPolicy, reason = "sandbox policy updated"): Promise<void> {
+    const sandbox = this.#sandbox;
+    if (sandbox === undefined) {
+      throw new Error("sandbox is not configured for this runtime");
+    }
+    this.#sandboxPolicy = policy;
+    await this.#emit({
+      ...this.#base(),
+      type: "sandbox_policy",
+      backend: sandbox.backend,
+      mode: policy.mode,
+      network: policy.network,
+      reason,
+    });
+  }
+
   settled(): Promise<void> {
     if (!this.#running && !this.#hasQueuedWork() && this.#currentState === "idle") {
       return Promise.resolve();
