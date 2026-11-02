@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-02
+goal: Define the architecture and v0/v1 scope for a learning-first harness that
+  can grow from CLI to a Codex-like multi-client experience.

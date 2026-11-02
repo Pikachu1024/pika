@@ -1,0 +1,31 @@
+schema: spec-driven
+
+context: |
+  Pika Harness is a learning-first TypeScript agent harness.
+  Target Node 24, pnpm 10 workspaces, strict TypeScript with NodeNext and erasableSyntaxOnly.
+  Package dependencies are one-way: schema <- core <- adapters <- server; schema <- client <- cli.
+  Approval is a UX layer; the sandbox executor is the enforcement boundary.
+  Reuse pi-ai for providers and pi-tui for the terminal client instead of rebuilding them.
+  Only packages/adapters/src/sandbox may import node:child_process.
+
+rules:
+  proposal:
+    - State what is explicitly out of scope.
+    - Name the affected capabilities and workspace packages.
+  specs:
+    - Every requirement has at least one scenario.
+    - Write observable behavior, not implementation steps.
+  design:
+    - Record alternatives considered and the chosen tradeoff.
+    - Cover sandbox enforcement and provider abstraction when the change touches execution.
+  tasks:
+    - Each task includes a verification step.
+    - Keep each task small enough to complete in one session.
+
+operations:
+  apply:
+    guidance:
+      - Run pnpm check after implementation and report any failures.
+  archive:
+    guidance:
+      - Summarize the archived change and any follow-up work before finishing.

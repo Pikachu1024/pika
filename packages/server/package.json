@@ -1,0 +1,19 @@
+{
+  "name": "@pika-harness/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@pika-harness/adapters": "workspace:*",
+    "@pika-harness/core": "workspace:*",
+    "@pika-harness/schema": "workspace:*"
+  }
+}
