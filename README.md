@@ -19,21 +19,60 @@ openspec/            proposals, specs, designs, and task tracking
 
 ## Quickstart
 
-Requires Node 24 and pnpm 10.
+Requires Bun 1.4 or newer.
 
 ```bash
-pnpm install
-pnpm check
+bun install
+bun run check
 ```
+
+## Build
+
+```bash
+bun run build          # per-package dist plus standalone binaries
+bun run build:js       # per-package dist only
+bun run build:binary   # standalone binaries only
+```
+
+The binary build uses `bun build --compile`, which embeds the Bun runtime and all dependencies, so the result does not need `node_modules`:
+
+```bash
+./dist/bin/pika-server --port 7331
+./dist/bin/pika --prompt "hello"
+```
+
+To run from a global install instead of the standalone binaries:
+
+```bash
+bun run link:global
+pika --help
+pika-server --help
+```
+
+`bun link` installs the shims into `~/.bun/bin`, which the Bun installer adds to `PATH`.
+
+See [Providers](docs/providers.md) for configuring an OpenAI-compatible LLM endpoint.
+
+## Interactive client
+
+`pika` connects to `pika-server` over WebSocket and dispatches slash commands locally:
+
+```text
+/help /models /model /config /status /usage /context
+/new /sessions /resume /fork /handoff /sandbox
+/compact /btw /approve /deny /quit
+```
+
+Model presets load from `.pika/models.json` or `PIKA_MODELS_FILE`; API keys are referenced by environment variable name only. `/model` and `/handoff` fork the current session instead of changing it in place. See [CLI](docs/cli.md) for the catalog format, precedence rules, and command semantics.
 
 ## Commands
 
 ```bash
-pnpm typecheck
-pnpm lint
-pnpm boundary
-pnpm test
-pnpm check   # all of the above
+bun run typecheck
+bun run lint
+bun run boundary
+bun run test
+bun run check   # all of the above
 ```
 
 ## Documentation
@@ -43,10 +82,11 @@ pnpm check   # all of the above
 - [Architecture](docs/architecture.md)
 - [Event contract](docs/events.md)
 - [Providers](docs/providers.md)
+- [CLI](docs/cli.md)
 - [Tools](docs/tools.md)
-- [Foundation proposal](openspec/changes/agent-harness-foundation/proposal.md)
-- [Foundation design](openspec/changes/agent-harness-foundation/design.md)
-- [Implementation tasks](openspec/changes/agent-harness-foundation/tasks.md)
+- [Foundation proposal](openspec/changes/archive/2026-11-02-agent-harness-foundation/proposal.md)
+- [Foundation design](openspec/changes/archive/2026-11-02-agent-harness-foundation/design.md)
+- [Implementation tasks](openspec/changes/archive/2026-11-02-agent-harness-foundation/tasks.md)
 
 ## Security posture
 

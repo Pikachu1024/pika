@@ -1,8 +1,8 @@
+import { afterEach, describe, expect, it } from "bun:test";
 import { createWebSocketClientTransport, PikaClient } from "@pika-harness/client";
 import type { AgentEvent, JsonRpcMessage } from "@pika-harness/schema";
 import type { WebSocketServerHandle } from "@pika-harness/server";
 import { startWebSocketServer } from "@pika-harness/server";
-import { afterEach, describe, expect, it } from "vitest";
 import { collectUntilSettled, createTestServer } from "./helpers.js";
 
 describe("websocket transport", () => {

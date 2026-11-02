@@ -6,10 +6,13 @@ import type {
   InitializeResult,
   JsonRpcId,
   JsonRpcMessage,
+  LlmEndpoint,
   NetworkPolicy,
   ProtocolTransport,
   SandboxMode,
   SandboxSelection,
+  SessionBtwResult,
+  SessionCompactResult,
   SessionForkResult,
   SessionStartResult,
   SessionSummary,
@@ -21,6 +24,8 @@ import {
   InitializeResultSchema,
   isJsonRpcRequest,
   JsonRpcMessageSchema,
+  SessionBtwResultSchema,
+  SessionCompactResultSchema,
   SessionForkResultSchema,
   SessionListResultSchema,
   SessionStartResultSchema,
@@ -39,6 +44,13 @@ export interface StartSessionInput {
   cwd: string;
   model?: string;
   sandbox?: SandboxSelection;
+  llm?: LlmEndpoint;
+}
+
+export interface ForkSessionOverrides {
+  model?: string;
+  llm?: LlmEndpoint;
+  cwd?: string;
 }
 
 /** Typed JSON-RPC error returned by the server. */
@@ -97,18 +109,40 @@ export class PikaClient {
       cwd: input.cwd,
       ...(input.model === undefined ? {} : { model: input.model }),
       ...(input.sandbox === undefined ? {} : { sandbox: input.sandbox }),
+      ...(input.llm === undefined ? {} : { llm: input.llm }),
     });
     return SessionStartResultSchema.parse(result);
   }
 
-  async resumeSession(sessionId: string): Promise<SessionStartResult> {
-    const result = await this.#request("session.resume", { sessionId });
+  async resumeSession(sessionId: string, llm?: LlmEndpoint): Promise<SessionStartResult> {
+    const result = await this.#request("session.resume", {
+      sessionId,
+      ...(llm === undefined ? {} : { llm }),
+    });
     return SessionStartResultSchema.parse(result);
   }
 
-  async forkSession(sessionId: string, entryId: string): Promise<SessionForkResult> {
-    const result = await this.#request("session.fork", { sessionId, entryId });
+  async forkSession(
+    sessionId: string,
+    entryId: string,
+    overrides: ForkSessionOverrides = {},
+  ): Promise<SessionForkResult> {
+    const result = await this.#request("session.fork", {
+      sessionId,
+      entryId,
+      ...(overrides.model === undefined ? {} : { model: overrides.model }),
+      ...(overrides.llm === undefined ? {} : { llm: overrides.llm }),
+      ...(overrides.cwd === undefined ? {} : { cwd: overrides.cwd }),
+    });
     return SessionForkResultSchema.parse(result);
+  }
+
+  async compactSession(sessionId: string): Promise<SessionCompactResult> {
+    return SessionCompactResultSchema.parse(await this.#request("session.compact", { sessionId }));
+  }
+
+  async askSideQuestion(sessionId: string, text: string): Promise<SessionBtwResult> {
+    return SessionBtwResultSchema.parse(await this.#request("session.btw", { sessionId, text }));
   }
 
   async listSessions(): Promise<SessionSummary[]> {
@@ -172,8 +206,6 @@ export class PikaClient {
     if (this.#closed) return;
     this.#closed = true;
     this.#abort(new Error("client closed"));
-    for (const subscription of this.#subscriptions.values()) subscription.close();
-    this.#subscriptions.clear();
     void this.#transport.close();
   }
 
@@ -246,11 +278,15 @@ export class PikaClient {
   }
 
   #abort(error: Error): void {
+    this.#closed = true;
     for (const pending of this.#pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(error);
     }
     this.#pending.clear();
+    // Ending subscriptions releases `for await` consumers when the transport goes away.
+    for (const subscription of this.#subscriptions.values()) subscription.close();
+    this.#subscriptions.clear();
   }
 }
 

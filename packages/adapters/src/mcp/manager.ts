@@ -253,6 +253,9 @@ class DefaultMcpManager implements McpManager {
         }),
         this.#connectTimeoutMs,
         `MCP server ${entry.config.name} did not start in time`,
+        (late) => {
+          void late.close().catch(() => undefined);
+        },
       );
       if (this.#closed) {
         await connection.close().catch(() => undefined);
@@ -445,10 +448,22 @@ function errorOutput(message: string): ToolOutput {
   };
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+  onLate?: (value: T) => void,
+): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    timer = setTimeout(() => {
+      reject(new Error(message));
+      // The factory may still resolve after the timeout; hand the result to the caller for cleanup.
+      promise.then(
+        (value) => onLate?.(value),
+        () => undefined,
+      );
+    }, timeoutMs);
     timer.unref?.();
   });
   try {

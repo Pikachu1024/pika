@@ -1,5 +1,5 @@
+import { describe, expect, it } from "bun:test";
 import type { AgentEvent } from "@pika-harness/schema";
-import { describe, expect, it } from "vitest";
 import { createIdGenerator, systemClock } from "../../src/clock.js";
 import { FauxProvider } from "../../src/provider/faux-provider.js";
 import type { LlmEvent } from "../../src/provider.js";

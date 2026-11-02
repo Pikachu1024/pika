@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { appendFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type { IdGenerator, SessionStore } from "@pika-harness/core";
+import type { IdGenerator, SessionForkOverrides, SessionStore } from "@pika-harness/core";
 import type {
   AgentEvent,
   SessionEntry,
@@ -102,7 +102,11 @@ export class JsonlSessionStore implements SessionStore {
     return summaries;
   }
 
-  async fork(sessionId: string, entryId: string): Promise<SessionMeta> {
+  async fork(
+    sessionId: string,
+    entryId: string,
+    overrides: SessionForkOverrides = {},
+  ): Promise<SessionMeta> {
     return this.withLock(sessionId, async () => {
       const sourceMeta = await this.requireMeta(sessionId);
       const sourceEntries = await this.readEntries(sessionId);
@@ -114,8 +118,8 @@ export class JsonlSessionStore implements SessionStore {
       const meta: SessionMeta = {
         id,
         ...(sourceMeta.title !== undefined ? { title: sourceMeta.title } : {}),
-        cwd: sourceMeta.cwd,
-        model: sourceMeta.model,
+        cwd: overrides.cwd ?? sourceMeta.cwd,
+        model: overrides.model ?? sourceMeta.model,
         createdAt: new Date().toISOString(),
         parentSessionId: sessionId,
         forkEntryId: entryId,

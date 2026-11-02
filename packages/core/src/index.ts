@@ -2,11 +2,14 @@ export type {
   AgentRuntime,
   AgentState,
   ApprovalHandler,
+  CompactionResult,
   RuntimeCompactionOptions,
   RuntimeHistoryEntry,
   RuntimeOptions,
   RuntimeSandboxOptions,
+  SideQuestionResult,
 } from "./agent.js";
+export { NotSettledError } from "./agent.js";
 export type { Clock, IdGenerator } from "./clock.js";
 export { createIdGenerator, systemClock } from "./clock.js";
 export type { AgentsFileOptions } from "./context/agents-md.js";
@@ -99,7 +102,7 @@ export type {
   TimelineTurn,
 } from "./session/replay.js";
 export { foldTimeline, loadResumeState, replaySession } from "./session/replay.js";
-export type { SessionStore } from "./session-store.js";
+export type { SessionForkOverrides, SessionStore } from "./session-store.js";
 export { ToolBatchExecutor } from "./tool/executor.js";
 export type { EditFileToolOptions } from "./tool/file/edit-file.js";
 export { createEditFileTool, EditFileArgsSchema } from "./tool/file/edit-file.js";

@@ -209,6 +209,25 @@ function toPiTool(tool: ProviderTool): PiTool {
 
 function toUserContent(
   content: ContentPart[],
+):
+  | string
+  | Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> {
+  const blocks = textOrImageBlocks(content);
+  // Strict OpenAI-compatible servers accept a plain string but not content arrays.
+  if (blocks.every((block) => block.type === "text")) {
+    return blocks.map((block) => block.text).join("\n");
+  }
+  return blocks;
+}
+
+function toToolResultContent(
+  content: ContentPart[],
+): Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> {
+  return textOrImageBlocks(content);
+}
+
+function textOrImageBlocks(
+  content: ContentPart[],
 ): Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> {
   const blocks: Array<
     { type: "text"; text: string } | { type: "image"; data: string; mimeType: string }
@@ -227,12 +246,6 @@ function toUserContent(
     }
   }
   return blocks;
-}
-
-function toToolResultContent(
-  content: ContentPart[],
-): Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> {
-  return toUserContent(content);
 }
 
 function toAssistantMessage(

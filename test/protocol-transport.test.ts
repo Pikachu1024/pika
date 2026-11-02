@@ -1,8 +1,8 @@
+import { describe, expect, it } from "bun:test";
 import { PassThrough } from "node:stream";
 import { createStdioClientTransport, PikaClient } from "@pika-harness/client";
 import type { AgentEvent, ProtocolTransport } from "@pika-harness/schema";
 import { createInProcessTransportPair, StdioTransport } from "@pika-harness/server";
-import { describe, expect, it } from "vitest";
 import { collectUntilSettled, createTestServer } from "./helpers.js";
 
 interface SessionTrace {

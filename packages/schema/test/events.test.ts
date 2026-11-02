@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { AgentEventSchema } from "../src/events.js";
 
 const timestamp = "2026-11-02T10:00:00.000Z";

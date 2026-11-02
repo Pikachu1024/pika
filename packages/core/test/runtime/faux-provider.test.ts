@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { FauxProvider } from "../../src/provider/faux-provider.js";
 import type { LlmEvent, LlmRequest, ModelInfo, Provider } from "../../src/provider.js";
 

@@ -1,5 +1,5 @@
+import { describe, expect, it } from "bun:test";
 import type { ApprovalDecision, SessionMeta } from "@pika-harness/schema";
-import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { RuntimeOptions } from "../../src/agent.js";
 import { createIdGenerator } from "../../src/clock.js";

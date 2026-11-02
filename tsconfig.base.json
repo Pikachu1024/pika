@@ -16,6 +16,15 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "types": ["node"]
+    "types": ["node", "bun"],
+    "baseUrl": ".",
+    "paths": {
+      "@pika-harness/schema": ["packages/schema/src/index.ts"],
+      "@pika-harness/core": ["packages/core/src/index.ts"],
+      "@pika-harness/adapters": ["packages/adapters/src/index.ts"],
+      "@pika-harness/server": ["packages/server/src/index.ts"],
+      "@pika-harness/client": ["packages/client/src/index.ts"],
+      "@pika-harness/cli": ["apps/cli/src/index.ts"]
+    }
   }
 }

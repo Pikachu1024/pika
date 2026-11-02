@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { createPromptBuilder, renderPromptSections } from "../../src/context/prompt-builder.js";
 
 describe("createPromptBuilder", () => {

@@ -1,5 +1,5 @@
+import { describe, expect, it } from "bun:test";
 import type { AgentEvent, SessionMeta, ToolResult } from "@pika-harness/schema";
-import { describe, expect, it } from "vitest";
 import type { AgentState, RuntimeOptions } from "../../src/agent.js";
 import type { Clock } from "../../src/clock.js";
 import { createIdGenerator } from "../../src/clock.js";

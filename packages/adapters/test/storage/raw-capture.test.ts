@@ -1,3 +1,4 @@
+import { describe, expect, it } from "bun:test";
 import { mkdtemp, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,7 +10,6 @@ import {
   FauxProvider,
   replaySession,
 } from "@pika-harness/core";
-import { describe, expect, it } from "vitest";
 import { RawCaptureProvider } from "../../src/provider/raw-capture.js";
 import { JsonlSessionStore } from "../../src/storage/jsonl-store.js";
 

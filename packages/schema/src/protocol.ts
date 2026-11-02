@@ -3,6 +3,7 @@ import { AgentEventSchema } from "./events.js";
 import { ApprovalIdSchema, EntryIdSchema, SessionIdSchema } from "./ids.js";
 import { NetworkPolicySchema, SandboxBackendSchema, SandboxModeSchema } from "./sandbox.js";
 import { SessionMetaSchema, SessionSummarySchema } from "./sessions.js";
+import { UsageSchema } from "./usage.js";
 
 export const PROTOCOL_VERSION = 1;
 
@@ -107,10 +108,20 @@ export const InitializeResultSchema = z.object({
 });
 export type InitializeResult = z.infer<typeof InitializeResultSchema>;
 
+export const LlmEndpointSchema = z.object({
+  baseUrl: z.string().min(1),
+  model: z.string().min(1),
+  apiKey: z.string().min(1).optional(),
+  contextWindow: z.number().int().positive().optional(),
+  maxTokens: z.number().int().positive().optional(),
+});
+export type LlmEndpoint = z.infer<typeof LlmEndpointSchema>;
+
 export const SessionStartParamsSchema = z.object({
   cwd: z.string().min(1),
   model: z.string().min(1).optional(),
   sandbox: SandboxSelectionSchema.optional(),
+  llm: LlmEndpointSchema.optional(),
 });
 export const SessionStartResultSchema = z.object({
   session: SessionSummarySchema,
@@ -118,15 +129,41 @@ export const SessionStartResultSchema = z.object({
 });
 export type SessionStartResult = z.infer<typeof SessionStartResultSchema>;
 
-export const SessionResumeParamsSchema = z.object({ sessionId: SessionIdSchema });
+export const SessionResumeParamsSchema = z.object({
+  sessionId: SessionIdSchema,
+  llm: LlmEndpointSchema.optional(),
+});
 export const SessionResumeResultSchema = SessionStartResultSchema;
 
 export const SessionForkParamsSchema = z.object({
   sessionId: SessionIdSchema,
   entryId: EntryIdSchema,
+  model: z.string().min(1).optional(),
+  llm: LlmEndpointSchema.optional(),
+  cwd: z.string().min(1).optional(),
 });
 export const SessionForkResultSchema = z.object({ session: SessionMetaSchema });
 export type SessionForkResult = z.infer<typeof SessionForkResultSchema>;
+
+export const SessionCompactParamsSchema = z.object({
+  sessionId: SessionIdSchema,
+});
+export const SessionCompactResultSchema = z.object({
+  compacted: z.boolean(),
+  tokensBefore: z.number().int().nonnegative(),
+  tokensAfter: z.number().int().nonnegative(),
+});
+export type SessionCompactResult = z.infer<typeof SessionCompactResultSchema>;
+
+export const SessionBtwParamsSchema = z.object({
+  sessionId: SessionIdSchema,
+  text: z.string().min(1),
+});
+export const SessionBtwResultSchema = z.object({
+  text: z.string(),
+  usage: UsageSchema.optional(),
+});
+export type SessionBtwResult = z.infer<typeof SessionBtwResultSchema>;
 
 export const SessionListParamsSchema = z.object({});
 export const SessionListResultSchema = z.object({
@@ -193,6 +230,14 @@ export const PROTOCOL_METHODS = {
     params: SessionForkParamsSchema,
     result: SessionForkResultSchema,
   },
+  "session.compact": {
+    params: SessionCompactParamsSchema,
+    result: SessionCompactResultSchema,
+  },
+  "session.btw": {
+    params: SessionBtwParamsSchema,
+    result: SessionBtwResultSchema,
+  },
   "session.list": {
     params: SessionListParamsSchema,
     result: SessionListResultSchema,
@@ -238,6 +283,8 @@ export const ProtocolMethodSchema = z.enum([
   "session.start",
   "session.resume",
   "session.fork",
+  "session.compact",
+  "session.btw",
   "session.list",
   "turn.start",
   "turn.steer",

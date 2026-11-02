@@ -1,5 +1,5 @@
+import { describe, expect, it } from "bun:test";
 import type { ContentPart, SessionEntry } from "@pika-harness/schema";
-import { describe, expect, it } from "vitest";
 import { createContextProjector } from "../../src/context/projection.js";
 
 const timestamp = "2026-11-02T10:00:00.000Z";

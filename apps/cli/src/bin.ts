@@ -1,4 +1,7 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { main } from "./cli.js";
 
-await main();
+main().catch((error: unknown) => {
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 1;
+});

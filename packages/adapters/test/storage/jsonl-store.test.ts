@@ -1,9 +1,9 @@
+import { afterEach, describe, expect, it } from "bun:test";
 import { appendFile, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { IdGenerator } from "@pika-harness/core";
 import type { AgentEvent, SessionMeta } from "@pika-harness/schema";
-import { afterEach, describe, expect, it } from "vitest";
 import { registerSessionStoreContract } from "../../../core/test/session/store-contract.js";
 import { JsonlSessionStore } from "../../src/storage/jsonl-store.js";
 

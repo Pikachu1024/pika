@@ -18,6 +18,7 @@ import {
 } from "@pika-harness/core";
 import type { AgentEvent } from "@pika-harness/schema";
 import type {
+  CompactionFactory,
   ServerSandboxOptions,
   SessionServer,
   SessionServerOptions,
@@ -49,6 +50,7 @@ export interface TestServerOptions {
   sandbox?: Partial<ServerSandboxOptions>;
   approvalTimeoutMs?: number;
   toolExecutor?: ToolExecutor;
+  compaction?: CompactionFactory;
   /** Reuses an external store, for example a JSONL store on disk. */
   store?: SessionStore;
 }
@@ -95,6 +97,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     ...(options.approvalTimeoutMs === undefined
       ? {}
       : { approvalTimeoutMs: options.approvalTimeoutMs }),
+    ...(options.compaction === undefined ? {} : { compaction: options.compaction }),
   };
   const server = createSessionServer(serverOptions);
 

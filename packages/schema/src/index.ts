@@ -52,6 +52,8 @@ export {
   ToolCallIdSchema,
   TurnIdSchema,
 } from "./ids.js";
+export type { ModelCatalog, ModelPreset } from "./models.js";
+export { ModelCatalogSchema, ModelPresetSchema } from "./models.js";
 export type {
   EffectiveSandbox,
   EventNotificationParams,
@@ -64,10 +66,13 @@ export type {
   JsonRpcRequest,
   JsonRpcResponse,
   JsonRpcSuccessResponse,
+  LlmEndpoint,
   ProtocolErrorCode,
   ProtocolMethod,
   ProtocolTransport,
   SandboxSelection,
+  SessionBtwResult,
+  SessionCompactResult,
   SessionForkResult,
   SessionListResult,
   SessionStartResult,
@@ -88,6 +93,7 @@ export {
   JsonRpcRequestSchema,
   JsonRpcResponseSchema,
   JsonRpcSuccessResponseSchema,
+  LlmEndpointSchema,
   PROTOCOL_ERROR_CODES,
   PROTOCOL_METHODS,
   PROTOCOL_VERSION,
@@ -95,6 +101,10 @@ export {
   SandboxModeParamsSchema,
   SandboxModeResultSchema,
   SandboxSelectionSchema,
+  SessionBtwParamsSchema,
+  SessionBtwResultSchema,
+  SessionCompactParamsSchema,
+  SessionCompactResultSchema,
   SessionForkParamsSchema,
   SessionForkResultSchema,
   SessionListParamsSchema,

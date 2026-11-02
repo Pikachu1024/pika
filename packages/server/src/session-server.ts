@@ -7,6 +7,7 @@ import type {
   PromptSection,
   Provider,
   ProviderTool,
+  RuntimeCompactionOptions,
   RuntimeHistoryEntry,
   SessionStore,
   ToolExecutor,
@@ -15,6 +16,7 @@ import {
   createIdGenerator,
   createRuntime,
   loadResumeState,
+  NotSettledError,
   replaySession,
   resolveSandboxPolicy,
   systemClock,
@@ -26,6 +28,7 @@ import type {
   EffectiveSandbox,
   JsonRpcId,
   JsonRpcMessage,
+  LlmEndpoint,
   NetworkPolicy,
   ProtocolMethod,
   ProtocolTransport,
@@ -37,6 +40,7 @@ import type {
 } from "@pika-harness/schema";
 import {
   isJsonRpcRequest,
+  JsonRpcIdSchema,
   JsonRpcMessageSchema,
   PROTOCOL_ERROR_CODES,
   PROTOCOL_METHODS,
@@ -49,6 +53,7 @@ export interface SessionContext {
   sessionId: string;
   cwd: string;
   model: string;
+  llm?: LlmEndpoint;
 }
 
 export interface ServerSandboxOptions {
@@ -63,6 +68,11 @@ export interface ServerSandboxOptions {
   maxOutputBytes?: number;
 }
 
+export type CompactionFactory = (
+  context: SessionContext,
+  provider: Provider,
+) => RuntimeCompactionOptions | undefined;
+
 export interface SessionServerOptions {
   store: SessionStore;
   provider: Provider | ((context: SessionContext) => Provider);
@@ -74,6 +84,7 @@ export interface SessionServerOptions {
   defaultCwd?: string;
   sandbox: ServerSandboxOptions;
   approvalTimeoutMs?: number;
+  compaction?: CompactionFactory;
   clock?: Clock;
   ids?: IdGenerator;
 }
@@ -101,6 +112,7 @@ interface ManagedSession {
   meta: SessionMeta;
   runtime: AgentRuntime;
   policy: SandboxPolicy | undefined;
+  llm?: LlmEndpoint;
 }
 
 interface Subscription {
@@ -149,6 +161,7 @@ export class DefaultSessionServer implements SessionServer {
   readonly #defaultCwd: string;
   readonly #sandbox: ServerSandboxOptions;
   readonly #approvalTimeoutMs: number;
+  readonly #compaction: CompactionFactory | undefined;
   readonly #clock: Clock;
   readonly #ids: IdGenerator;
   readonly #sessions = new Map<string, ManagedSession>();
@@ -167,6 +180,7 @@ export class DefaultSessionServer implements SessionServer {
     this.#defaultCwd = path.resolve(options.defaultCwd ?? process.cwd());
     this.#sandbox = options.sandbox;
     this.#approvalTimeoutMs = options.approvalTimeoutMs ?? 300_000;
+    this.#compaction = options.compaction;
     this.#clock = options.clock ?? systemClock;
     this.#ids = options.ids ?? createIdGenerator();
   }
@@ -227,6 +241,15 @@ export class DefaultSessionServer implements SessionServer {
         this.#sendError(transport, message.id, error.code, error.message, error.data);
         return;
       }
+      if (error instanceof NotSettledError) {
+        this.#sendError(
+          transport,
+          message.id,
+          PROTOCOL_ERROR_CODES.sessionNotSettled,
+          error.message,
+        );
+        return;
+      }
       this.#sendError(
         transport,
         message.id,
@@ -261,12 +284,34 @@ export class DefaultSessionServer implements SessionServer {
         };
       case "session.start":
         return this.#startSession(
-          params as { cwd: string; model?: string; sandbox?: SandboxSelection },
+          params as {
+            cwd: string;
+            model?: string;
+            sandbox?: SandboxSelection;
+            llm?: LlmEndpoint;
+          },
         );
       case "session.resume":
-        return this.#resumeSession(params as { sessionId: string });
+        return this.#resumeSession(params as { sessionId: string; llm?: LlmEndpoint });
       case "session.fork":
-        return this.#forkSession(params as { sessionId: string; entryId: string });
+        return this.#forkSession(
+          params as {
+            sessionId: string;
+            entryId: string;
+            model?: string;
+            llm?: LlmEndpoint;
+            cwd?: string;
+          },
+        );
+      case "session.compact": {
+        const session = this.#requireSession(params as { sessionId: string });
+        return session.runtime.compact();
+      }
+      case "session.btw": {
+        const input = params as { sessionId: string; text: string };
+        const session = this.#requireSession(input);
+        return session.runtime.askSideQuestion(input.text);
+      }
       case "session.list":
         return { sessions: await this.#store.list() };
       case "turn.start": {
@@ -308,24 +353,37 @@ export class DefaultSessionServer implements SessionServer {
     cwd: string;
     model?: string;
     sandbox?: SandboxSelection;
+    llm?: LlmEndpoint;
   }): Promise<{ session: SessionSummary; sandbox: EffectiveSandbox }> {
     const cwd = path.resolve(this.#defaultCwd, input.cwd);
-    const model = input.model ?? this.#defaultModel ?? "unknown-model";
+    const model = input.llm?.model ?? input.model ?? this.#defaultModel ?? "unknown-model";
     const sessionId = this.#ids.next("session");
     const createdAt = this.#clock.now().toISOString();
     const policy = this.#resolvePolicy(input.sandbox, cwd);
 
     await this.#store.create({ id: sessionId, cwd, model, createdAt });
 
-    const runtime = this.#createRuntime({ sessionId, cwd, model }, policy, []);
+    const context: SessionContext = {
+      sessionId,
+      cwd,
+      model,
+      ...(input.llm === undefined ? {} : { llm: input.llm }),
+    };
+    const runtime = this.#createRuntime(context, policy, []);
     const meta: SessionMeta = { id: sessionId, cwd, model, createdAt };
-    this.#sessions.set(sessionId, { meta, runtime, policy });
+    this.#sessions.set(sessionId, {
+      meta,
+      runtime,
+      policy,
+      ...(input.llm === undefined ? {} : { llm: input.llm }),
+    });
     await this.#applyPolicy(runtime, policy, "session started");
     return { session: await this.#summary(sessionId), sandbox: effective(policy, this.#backend()) };
   }
 
   async #resumeSession(input: {
     sessionId: string;
+    llm?: LlmEndpoint;
   }): Promise<{ session: SessionSummary; sandbox: EffectiveSandbox }> {
     const existing = this.#sessions.get(input.sessionId);
     if (existing !== undefined && existing.policy !== undefined) {
@@ -334,6 +392,7 @@ export class DefaultSessionServer implements SessionServer {
         sandbox: effective(existing.policy, this.#backend()),
       };
     }
+    await this.#summary(input.sessionId);
     let state: Awaited<ReturnType<typeof loadResumeState>>;
     try {
       state = await loadResumeState(this.#store, input.sessionId);
@@ -351,30 +410,72 @@ export class DefaultSessionServer implements SessionServer {
       ...(state.summary.title === undefined ? {} : { title: state.summary.title }),
     };
     const policy = this.#resolvePolicy(undefined, meta.cwd);
+    const llm = input.llm;
+    const context: SessionContext = {
+      sessionId: meta.id,
+      cwd: meta.cwd,
+      model: meta.model,
+      ...(llm === undefined ? {} : { llm }),
+    };
     const runtime = this.#createRuntime(
-      { sessionId: meta.id, cwd: meta.cwd, model: meta.model },
+      context,
       policy,
       state.history.map((message) => ({ message })),
     );
-    this.#sessions.set(meta.id, { meta, runtime, policy });
+    this.#sessions.set(meta.id, {
+      meta,
+      runtime,
+      policy,
+      ...(llm === undefined ? {} : { llm }),
+    });
     await this.#applyPolicy(runtime, policy, "session resumed");
     return { session: state.summary, sandbox: effective(policy, this.#backend()) };
   }
 
-  async #forkSession(input: { sessionId: string; entryId: string }): Promise<{
-    session: SessionMeta;
-  }> {
+  async #forkSession(input: {
+    sessionId: string;
+    entryId: string;
+    model?: string;
+    llm?: LlmEndpoint;
+    cwd?: string;
+  }): Promise<{ session: SessionMeta }> {
     const source = this.#requireSession(input);
-    const meta = await this.#store.fork(input.sessionId, input.entryId);
+    if (!source.runtime.isSettled()) {
+      throw new NotSettledError("cannot fork while the source session is not settled");
+    }
+    const cwd = input.cwd === undefined ? undefined : path.resolve(this.#defaultCwd, input.cwd);
+    const model = input.llm?.model ?? input.model;
+    const meta = await this.#store.fork(input.sessionId, input.entryId, {
+      ...(model === undefined ? {} : { model }),
+      ...(cwd === undefined ? {} : { cwd }),
+    });
     const entries = await this.#store.entries(meta.id);
     const history = replaySession({ entries }).messages;
-    const policy = source.policy ?? this.#resolvePolicy(undefined, meta.cwd);
+    // Inherit the source mode and network but re-resolve paths against the forked workspace.
+    const policy = this.#resolvePolicy(
+      source.policy === undefined
+        ? undefined
+        : { mode: source.policy.mode, network: source.policy.network },
+      meta.cwd,
+    );
+    const llm = input.llm ?? source.llm;
+    const context: SessionContext = {
+      sessionId: meta.id,
+      cwd: meta.cwd,
+      model: meta.model,
+      ...(llm === undefined ? {} : { llm }),
+    };
     const runtime = this.#createRuntime(
-      { sessionId: meta.id, cwd: meta.cwd, model: meta.model },
+      context,
       policy,
       history.map((message) => ({ message })),
     );
-    this.#sessions.set(meta.id, { meta, runtime, policy });
+    this.#sessions.set(meta.id, {
+      meta,
+      runtime,
+      policy,
+      ...(llm === undefined ? {} : { llm }),
+    });
     await this.#applyPolicy(runtime, policy, "session forked");
     return { session: meta };
   }
@@ -457,6 +558,7 @@ export class DefaultSessionServer implements SessionServer {
       typeof this.#provider === "function" ? this.#provider(context) : this.#provider;
     const toolExecutor =
       typeof this.#toolExecutor === "function" ? this.#toolExecutor(context) : this.#toolExecutor;
+    const compaction = this.#compaction?.(context, provider);
     return createRuntime({
       sessionId: context.sessionId,
       model: context.model,
@@ -469,6 +571,7 @@ export class DefaultSessionServer implements SessionServer {
       ids: this.#ids,
       initialHistory: history,
       tools: this.#tools,
+      ...(compaction === undefined ? {} : { compaction }),
       ...(this.#systemPrompt === undefined ? {} : { systemPrompt: this.#systemPrompt }),
       ...(this.#promptSections === undefined ? {} : { promptSections: this.#promptSections }),
       ...(toolExecutor === undefined ? {} : { toolExecutor }),
@@ -627,9 +730,10 @@ function clampNetwork(requested: NetworkPolicy, ceiling: NetworkPolicy): Network
   return NETWORK_RANK[requested] <= NETWORK_RANK[ceiling] ? requested : ceiling;
 }
 
-function idOf(message: JsonRpcMessage): JsonRpcId | null {
-  if ("id" in message) {
-    return message.id;
+function idOf(message: unknown): JsonRpcId | null {
+  if (typeof message !== "object" || message === null || !("id" in message)) {
+    return null;
   }
-  return null;
+  const parsed = JsonRpcIdSchema.safeParse((message as { id: unknown }).id);
+  return parsed.success ? parsed.data : null;
 }

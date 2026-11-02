@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import {
   EventNotificationParamsSchema,
   InitializeResultSchema,
@@ -32,7 +32,7 @@ describe("protocol schemas", () => {
       request("initialize", { clientName: "docs-client", protocolVersion: PROTOCOL_VERSION }),
     );
 
-    const result = {
+    const result: ReturnType<typeof InitializeResultSchema.parse> = {
       protocolVersion: PROTOCOL_VERSION,
       serverName: "pika-harness",
       capabilities: { transports: ["stdio", "websocket", "in-process"] },
@@ -46,7 +46,7 @@ describe("protocol schemas", () => {
   });
 
   it("validates the documented session and turn examples", () => {
-    const start = {
+    const start: ReturnType<typeof SessionStartResultSchema.parse> = {
       session: {
         id: "session_1",
         cwd: "/workspace",
@@ -64,7 +64,7 @@ describe("protocol schemas", () => {
     expect(SessionListResultSchema.parse({ sessions: [start.session] })).toEqual({
       sessions: [start.session],
     });
-    const meta = {
+    const meta: ReturnType<typeof SessionForkResultSchema.parse>["session"] = {
       id: start.session.id,
       cwd: start.session.cwd,
       model: start.session.model,
@@ -73,6 +73,35 @@ describe("protocol schemas", () => {
     };
     expect(SessionForkResultSchema.parse({ session: meta })).toEqual({ session: meta });
     expect(PROTOCOL_METHODS["session.start"].result.parse(start)).toEqual(start);
+  });
+
+  it("accepts an optional LLM endpoint for start and resume", () => {
+    const llm = {
+      baseUrl: "http://127.0.0.1:59000/v1",
+      model: "local-model",
+      apiKey: "secret-key",
+      contextWindow: 32_768,
+    };
+    expect(
+      PROTOCOL_METHODS["session.start"].params.parse({ cwd: "/workspace", llm }),
+    ).toMatchObject({ llm });
+    expect(
+      PROTOCOL_METHODS["session.resume"].params.parse({ sessionId: "session_1", llm }),
+    ).toMatchObject({ llm });
+
+    const start = PROTOCOL_METHODS["session.start"].params;
+    expect(start.safeParse({ cwd: "/workspace", llm: { baseUrl: "", model: "m" } }).success).toBe(
+      false,
+    );
+    expect(
+      start.safeParse({ cwd: "/workspace", llm: { baseUrl: "http://x/v1", model: "" } }).success,
+    ).toBe(false);
+    expect(
+      start.safeParse({
+        cwd: "/workspace",
+        llm: { baseUrl: "http://x/v1", model: "m", contextWindow: 0 },
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects invalid sandbox selections and turn text", () => {
@@ -115,6 +144,56 @@ describe("protocol schemas", () => {
     expect(JsonRpcErrorResponseSchema.parse(withData)).toEqual(withData);
   });
 
+  it("accepts fork overrides and the compact and side-question methods", () => {
+    const llm = {
+      baseUrl: "http://127.0.0.1:59000/v1",
+      model: "override-model",
+      apiKey: "secret-key",
+    };
+    expect(
+      PROTOCOL_METHODS["session.fork"].params.parse({
+        sessionId: "session_1",
+        entryId: "entry_1",
+        model: "override-model",
+        llm,
+        cwd: "/workspace/next",
+      }),
+    ).toEqual({
+      sessionId: "session_1",
+      entryId: "entry_1",
+      model: "override-model",
+      llm,
+      cwd: "/workspace/next",
+    });
+    expect(
+      PROTOCOL_METHODS["session.fork"].params.safeParse({
+        sessionId: "session_1",
+        entryId: "entry_1",
+        cwd: "",
+      }).success,
+    ).toBe(false);
+
+    expect(PROTOCOL_METHODS["session.compact"].params.parse({ sessionId: "session_1" })).toEqual({
+      sessionId: "session_1",
+    });
+    const compacted = {
+      compacted: true,
+      tokensBefore: 900,
+      tokensAfter: 120,
+    };
+    expect(PROTOCOL_METHODS["session.compact"].result.parse(compacted)).toEqual(compacted);
+
+    const btw = { text: "answer", usage: { inputTokens: 5, outputTokens: 2 } };
+    expect(
+      PROTOCOL_METHODS["session.btw"].params.parse({ sessionId: "session_1", text: "why?" }),
+    ).toEqual({ sessionId: "session_1", text: "why?" });
+    expect(PROTOCOL_METHODS["session.btw"].result.parse(btw)).toEqual(btw);
+    expect(
+      PROTOCOL_METHODS["session.btw"].params.safeParse({ sessionId: "session_1", text: "" })
+        .success,
+    ).toBe(false);
+  });
+
   it("distinguishes requests from notifications and responses", () => {
     expect(isJsonRpcRequest(request("initialize", {}))).toBe(true);
     expect(isJsonRpcRequest({ jsonrpc: "2.0", method: "event", params: {} })).toBe(false);
@@ -143,13 +222,15 @@ describe("protocol schemas", () => {
   });
 
   it("keeps the method registry and method enum in sync", () => {
-    const registered = Object.keys(PROTOCOL_METHODS).sort();
+    const registered = Object.keys(PROTOCOL_METHODS)
+      .map((method) => ProtocolMethodSchema.parse(method))
+      .sort();
     const declared = [...ProtocolMethodSchema.options].sort();
     expect(declared).toEqual(registered);
   });
 
   it("validates event notifications against the agent event schema", () => {
-    const params = {
+    const params: ReturnType<typeof EventNotificationParamsSchema.parse> = {
       subscriptionId: "subscription_1",
       event: {
         sessionId: "session_1",

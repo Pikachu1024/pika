@@ -1,9 +1,9 @@
+import { describe, expect, it } from "bun:test";
 import { getModel } from "@mariozechner/pi-ai";
-import { describe, expect, it } from "vitest";
 import { PiAiProvider } from "../../src/provider/pi-ai-provider.js";
 
 // Opt-in only: live providers cost money and are non-deterministic. The default
-// `pnpm test` run skips this file.
+// `bun test` run skips this file.
 const enabled =
   process.env.PIKA_LIVE_SMOKE === "1" && (process.env.OPENAI_API_KEY?.length ?? 0) > 0;
 

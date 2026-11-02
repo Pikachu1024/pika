@@ -1,3 +1,4 @@
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -12,7 +13,6 @@ import {
   ToolRegistry,
 } from "@pika-harness/core";
 import type { ToolResult } from "@pika-harness/schema";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeProcessExecutor } from "../../src/sandbox/node-executor.js";
 import { FileToolOutputStore } from "../../src/storage/file-output-store.js";
 

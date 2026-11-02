@@ -1,5 +1,5 @@
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { AgentEvent, SessionMeta, SessionSummary, Usage } from "@pika-harness/schema";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { SessionStore } from "../../src/session-store.js";
 
 export interface SessionStoreFixture {
@@ -298,6 +298,29 @@ export function registerSessionStoreContract(name: string, factory: SessionStore
       const summaries = await store().list();
       expect(summaryFor(summaries, source.id).status).toBe("settled");
       expect(summaryFor(summaries, forked.id).status).toBe("active");
+    });
+
+    it("applies model and working-directory overrides when forking", async () => {
+      const source = makeMeta("session_override_source");
+      await store().create(source);
+      const head = await store().append(source.id, agentStart(source.id, timestamp(1)));
+
+      const forked = await store().fork(source.id, head.id, {
+        model: "override-model",
+        cwd: "/tmp/pika-next",
+      });
+      expect(forked.model).toBe("override-model");
+      expect(forked.cwd).toBe("/tmp/pika-next");
+      expect(forked.parentSessionId).toBe(source.id);
+      expect(forked.forkEntryId).toBe(head.id);
+
+      const sourceSummary = summaryFor(await store().list(), source.id);
+      expect(sourceSummary.model).toBe(source.model);
+      expect(sourceSummary.cwd).toBe(source.cwd);
+
+      const forkedSummary = summaryFor(await store().list(), forked.id);
+      expect(forkedSummary.model).toBe("override-model");
+      expect(forkedSummary.cwd).toBe("/tmp/pika-next");
     });
 
     it("rejects a fork at an unknown entry", async () => {

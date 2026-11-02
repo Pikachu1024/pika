@@ -15,3 +15,7 @@
 - Sectioned prompt builder, `AGENTS.md` discovery, deterministic context projection with prompt hashing, token estimation, and compaction planning.
 - Tool registry with JSON Schema conversion and a batch executor with validation, concurrency keys, ordered results, and abort handling.
 - Event contract documentation and replayable event fixtures.
+
+### Changed
+
+- Migrated the toolchain to Bun 1.4: Bun workspaces and `bun.lock` replace pnpm, `bun:test` replaces Vitest, and `bun build --compile` replaces the Node SEA pipeline.

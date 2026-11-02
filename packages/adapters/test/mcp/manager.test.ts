@@ -1,3 +1,4 @@
+import { afterEach, describe, expect, it } from "bun:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -6,7 +7,6 @@ import {
   ListToolsRequestSchema,
   type Tool as SdkTool,
 } from "@modelcontextprotocol/sdk/types.js";
-import { afterEach, describe, expect, it } from "vitest";
 import type { McpClientLike, McpConnectionFactory, McpServerConfig } from "../../src/index.js";
 import { createMcpManager } from "../../src/index.js";
 
@@ -219,6 +219,35 @@ describe("MCP manager", () => {
       "mcp__demo__first",
       "mcp__demo__second",
     ]);
+
+    await manager.close();
+  });
+
+  it("closes a connection that resolves after the connect timeout", async () => {
+    let closed = false;
+    const manager = createMcpManager({
+      servers: [stdio("slow")],
+      connectTimeoutMs: 5,
+      reconnect: { enabled: false },
+      connectionFactory: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return {
+          client: {
+            listTools: async () => ({ tools: [] }),
+            callTool: async () => ({ content: [] }),
+          } as unknown as McpClientLike,
+          close: async () => {
+            closed = true;
+          },
+        };
+      },
+    });
+
+    await manager.start();
+    expect(manager.statuses()[0]?.state).toBe("unavailable");
+
+    await waitFor(() => closed);
+    expect(manager.statuses()[0]?.state).toBe("unavailable");
 
     await manager.close();
   });

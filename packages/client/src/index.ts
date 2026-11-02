@@ -1,5 +1,6 @@
 export type {
   EventSubscription,
+  ForkSessionOverrides,
   PikaClientOptions,
   StartSessionInput,
 } from "./client.js";

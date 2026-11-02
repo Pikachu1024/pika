@@ -7,7 +7,7 @@ import type {
   Usage,
 } from "@pika-harness/schema";
 import type { IdGenerator } from "../clock.js";
-import type { SessionStore } from "../session-store.js";
+import type { SessionForkOverrides, SessionStore } from "../session-store.js";
 
 interface StoredSession {
   meta: SessionMeta;
@@ -68,7 +68,11 @@ export class MemorySessionStore implements SessionStore {
     return [...this.sessions.values()].map((session) => summarize(session.meta, session.entries));
   }
 
-  async fork(sessionId: string, entryId: string): Promise<SessionMeta> {
+  async fork(
+    sessionId: string,
+    entryId: string,
+    overrides: SessionForkOverrides = {},
+  ): Promise<SessionMeta> {
     const source = this.requireSession(sessionId);
     const chain = collectAncestors(source.entries, entryId, sessionId);
     const id = this.ids.next("session");
@@ -78,8 +82,8 @@ export class MemorySessionStore implements SessionStore {
     const meta: SessionMeta = {
       id,
       ...(source.meta.title !== undefined ? { title: source.meta.title } : {}),
-      cwd: source.meta.cwd,
-      model: source.meta.model,
+      cwd: overrides.cwd ?? source.meta.cwd,
+      model: overrides.model ?? source.meta.model,
       createdAt: new Date().toISOString(),
       parentSessionId: sessionId,
       forkEntryId: entryId,

@@ -1,3 +1,4 @@
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -5,7 +6,6 @@ import path from "node:path";
 import type { Executor } from "@pika-harness/core";
 import { resolveSandboxPolicy } from "@pika-harness/core";
 import type { SandboxPolicy } from "@pika-harness/schema";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 export interface ConformanceSupport {
   outsideWrite?: boolean;

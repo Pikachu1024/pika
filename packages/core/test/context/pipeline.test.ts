@@ -1,5 +1,5 @@
+import { describe, expect, it } from "bun:test";
 import type { SessionEntry } from "@pika-harness/schema";
-import { describe, expect, it } from "vitest";
 import { createProjectionPipeline } from "../../src/context/pipeline.js";
 import { estimateMessages } from "../../src/context/token-estimator.js";
 

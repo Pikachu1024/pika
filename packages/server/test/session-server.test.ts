@@ -1,7 +1,8 @@
+import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { LlmEvent, Tool } from "@pika-harness/core";
+import type { LlmEvent, Provider, Tool } from "@pika-harness/core";
 import {
   createIdGenerator,
   FauxProvider,
@@ -9,10 +10,9 @@ import {
   ToolBatchExecutor,
   ToolRegistry,
 } from "@pika-harness/core";
-import type { AgentEvent, JsonRpcMessage } from "@pika-harness/schema";
-import { afterEach, describe, expect, it } from "vitest";
+import type { AgentEvent, JsonRpcMessage, ProtocolTransport } from "@pika-harness/schema";
 import { z } from "zod";
-import type { SessionServer } from "../src/index.js";
+import type { CompactionFactory, SessionContext, SessionServer } from "../src/index.js";
 import { createInProcessTransportPair, createSessionServer } from "../src/index.js";
 
 const clock = { now: () => new Date("2026-01-01T00:00:00.000Z") };
@@ -41,9 +41,65 @@ const noteTool: Tool = {
   },
 };
 
+const longTurn: LlmEvent[] = [
+  { type: "text_delta", text: "x".repeat(400) },
+  { type: "done", stopReason: "end" },
+];
+
+const summaryTurn: LlmEvent[] = [
+  { type: "text_delta", text: "short summary" },
+  { type: "done", stopReason: "end" },
+];
+
+const sideTurn: LlmEvent[] = [
+  { type: "text_delta", text: "side answer" },
+  { type: "usage", usage: { inputTokens: 3, outputTokens: 2 } },
+  { type: "done", stopReason: "end" },
+];
+
+interface Deferred {
+  promise: Promise<void>;
+  resolve(): void;
+}
+
+function deferred(): Deferred {
+  let release: () => void = () => undefined;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, resolve: () => release() };
+}
+
+class GatedProvider implements Provider {
+  readonly started = deferred();
+  readonly release = deferred();
+
+  models() {
+    return [{ id: "faux-model", provider: "faux", contextWindow: 32_768 }];
+  }
+
+  stream(
+    _request: Parameters<Provider["stream"]>[0],
+    signal: AbortSignal,
+  ): AsyncIterable<LlmEvent> {
+    return this.#run(signal);
+  }
+
+  async *#run(signal: AbortSignal): AsyncIterable<LlmEvent> {
+    yield { type: "text_delta", text: "working" };
+    this.started.resolve();
+    await this.release.promise;
+    if (signal.aborted) return;
+    yield { type: "done", stopReason: "end" };
+  }
+}
+
 interface Harness {
   server: SessionServer;
   store: MemorySessionStore;
+  cwd: string;
+  serverTransport: ProtocolTransport;
+  clientTransport: ProtocolTransport;
   events: AgentEvent[];
   send(method: string, params: unknown): Promise<JsonRpcMessage>;
   close(): Promise<void>;
@@ -58,6 +114,8 @@ interface HarnessOptions {
     approvalMode?: "untrusted" | "on-failure" | "on-request" | "never";
   };
   tools?: Tool[];
+  provider?: (context: SessionContext) => Provider;
+  compaction?: CompactionFactory;
 }
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -70,7 +128,10 @@ async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
   const cwd = await mkdtemp(path.join(tmpdir(), "pika-server-"));
   const ids = createIdGenerator();
   const store = new MemorySessionStore({ ids });
-  const provider = new FauxProvider(options.turns ?? [textTurn]);
+  const provider =
+    options.provider === undefined
+      ? new FauxProvider(options.turns ?? [textTurn])
+      : options.provider;
   const registry = new ToolRegistry();
   for (const tool of options.tools ?? []) registry.register(tool);
   const toolExecutor = options.tools === undefined ? undefined : new ToolBatchExecutor(registry);
@@ -84,6 +145,7 @@ async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
     ids,
     ...(toolExecutor === undefined ? {} : { toolExecutor }),
     ...(options.tools === undefined ? {} : { tools: registry.toProviderTools() }),
+    ...(options.compaction === undefined ? {} : { compaction: options.compaction }),
     sandbox: {
       backend: "none",
       defaultMode: "workspace-write",
@@ -127,7 +189,16 @@ async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
   };
   cleanups.push(close);
 
-  return { server, store, events, send, close };
+  return {
+    server,
+    store,
+    cwd,
+    serverTransport: serverSide,
+    clientTransport: clientSide,
+    events,
+    send,
+    close,
+  };
 }
 
 async function startSession(
@@ -177,10 +248,42 @@ describe("session server", () => {
     expect(missingParams).toMatchObject({ error: { code: -32602 } });
 
     const settled = await harness.send("session.resume", { sessionId: "session_9" });
-    expect(settled).toMatchObject({ error: { code: 1002 } });
+    expect(settled).toMatchObject({ error: { code: 1001 } });
 
     const missingSession = await harness.send("subscribe", { sessionId: "session_9" });
     expect(missingSession).toMatchObject({ error: { code: 1001 } });
+  });
+
+  it("answers non-object JSON frames with an invalid-request error", async () => {
+    const harness = await createHarness();
+    const replies: JsonRpcMessage[] = [];
+    harness.clientTransport.onMessage((message) => replies.push(message));
+
+    for (const frame of [null, "hello", 42]) {
+      await expect(
+        harness.server.handle(harness.serverTransport, frame as unknown as JsonRpcMessage),
+      ).resolves.toBeUndefined();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    expect(replies).toEqual([
+      { jsonrpc: "2.0", id: null, error: { code: -32600, message: "invalid request" } },
+      { jsonrpc: "2.0", id: null, error: { code: -32600, message: "invalid request" } },
+      { jsonrpc: "2.0", id: null, error: { code: -32600, message: "invalid request" } },
+    ]);
+  });
+
+  it("distinguishes an unsettled session from a missing session", async () => {
+    const harness = await createHarness();
+    await harness.store.create({
+      id: "session_unsettled",
+      cwd: "/tmp",
+      model: "faux-model",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const response = await harness.send("session.resume", { sessionId: "session_unsettled" });
+    expect(response).toMatchObject({ error: { code: 1002 } });
   });
 
   it("clamps requested sandbox settings to the server ceilings", async () => {
@@ -215,6 +318,31 @@ describe("session server", () => {
     expect(
       afterChange.filter((entry) => entry.event.type === "sandbox_policy").at(-1)?.event,
     ).toMatchObject({ mode: "read-only", reason: "client selected read-only/none" });
+  });
+
+  it("passes the client LLM endpoint to the provider factory without persisting its key", async () => {
+    const contexts: SessionContext[] = [];
+    const harness = await createHarness({
+      provider: (context) => {
+        contexts.push(context);
+        return new FauxProvider([textTurn]);
+      },
+    });
+
+    const llm = {
+      baseUrl: "http://127.0.0.1:59000/v1",
+      model: "local-model",
+      apiKey: "secret-key",
+    };
+    const response = await harness.send("session.start", { cwd: ".", llm });
+    expect(response).toMatchObject({ result: { session: { model: "local-model" } } });
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]).toMatchObject({ model: "local-model", llm });
+
+    if (!("result" in response)) throw new Error(JSON.stringify(response));
+    const sessionId = (response.result as { session: { id: string } }).session.id;
+    const stored = await harness.store.entries(sessionId);
+    expect(JSON.stringify(stored)).not.toContain("secret-key");
   });
 
   it("routes approval requests and executes the widened call", async () => {
@@ -288,4 +416,130 @@ describe("session server", () => {
     expect(harness.events.some((event) => event.type === "approval_requested")).toBe(false);
     expect(harness.events.at(-1)?.type).toBe("settled");
   });
+
+  it("compacts manually and answers side questions without recording entries", async () => {
+    const provider = new FauxProvider([longTurn, longTurn, summaryTurn, sideTurn]);
+    const compaction: CompactionFactory = (_context, streamProvider) => ({
+      contextWindow: 1_000_000,
+      reserveTokens: 0,
+      keepRecentTurns: 1,
+      summarize: async (messages) => {
+        let text = "";
+        for await (const event of streamProvider.stream(
+          { model: "faux-model", system: "", messages, tools: [] },
+          new AbortController().signal,
+        )) {
+          if (event.type === "text_delta") text += event.text;
+          else if (event.type === "error") throw new Error(event.error.message);
+          else if (event.type === "done") break;
+        }
+        return text;
+      },
+    });
+    const harness = await createHarness({ provider: () => provider, compaction });
+    const started = await startSession(harness);
+
+    await harness.send("turn.start", { sessionId: started.sessionId, text: "first" });
+    await waitFor(harness, (events) => settledCount(events) === 1);
+    await harness.send("turn.start", { sessionId: started.sessionId, text: "second" });
+    await waitFor(harness, (events) => settledCount(events) === 2);
+
+    const compacted = await harness.send("session.compact", { sessionId: started.sessionId });
+    expect(compacted).toMatchObject({ result: { compacted: true } });
+    const result = (compacted as { result: { tokensBefore: number; tokensAfter: number } }).result;
+    expect(result.tokensBefore).toBeGreaterThan(result.tokensAfter);
+    const start = harness.events.find((event) => event.type === "compaction_start");
+    expect(start?.type === "compaction_start" ? start.reason : undefined).toBe("manual");
+    const end = harness.events.find((event) => event.type === "compaction_end");
+    expect(end?.type === "compaction_end" ? end.tokensAfter : -1).toBe(result.tokensAfter);
+
+    const entriesBefore = await harness.store.entries(started.sessionId);
+    const btw = await harness.send("session.btw", {
+      sessionId: started.sessionId,
+      text: "why?",
+    });
+    expect(btw).toMatchObject({
+      result: { text: "side answer", usage: { inputTokens: 3, outputTokens: 2 } },
+    });
+    const entriesAfter = await harness.store.entries(started.sessionId);
+    expect(entriesAfter).toEqual(entriesBefore);
+    expect(JSON.stringify(entriesAfter)).not.toContain("side answer");
+  });
+
+  it("rejects compact, side questions, and forks while the source is busy", async () => {
+    const gated = new GatedProvider();
+    const harness = await createHarness({ provider: () => gated });
+    const started = await startSession(harness);
+
+    await harness.send("turn.start", { sessionId: started.sessionId, text: "busy" });
+    await gated.started.promise;
+
+    const compact = await harness.send("session.compact", { sessionId: started.sessionId });
+    expect(compact).toMatchObject({ error: { code: 1002 } });
+    const btw = await harness.send("session.btw", {
+      sessionId: started.sessionId,
+      text: "hello?",
+    });
+    expect(btw).toMatchObject({ error: { code: 1002 } });
+    const fork = await harness.send("session.fork", {
+      sessionId: started.sessionId,
+      entryId: "entry_1",
+    });
+    expect(fork).toMatchObject({ error: { code: 1002 } });
+
+    gated.release.resolve();
+    await waitFor(harness, (events) => events.some((event) => event.type === "settled"));
+  });
+
+  it("forks with model and cwd overrides and clamps the effective sandbox", async () => {
+    const harness = await createHarness({
+      sandbox: { maxMode: "read-only", maxNetwork: "none" },
+    });
+    const started = await startSession(harness);
+    await harness.send("turn.start", { sessionId: started.sessionId, text: "hello" });
+    await waitFor(harness, (events) => events.some((event) => event.type === "settled"));
+
+    const sourceEntries = await harness.store.entries(started.sessionId);
+    const head = sourceEntries.at(-1)?.id;
+    if (head === undefined) throw new Error("missing source head");
+
+    const forked = await harness.send("session.fork", {
+      sessionId: started.sessionId,
+      entryId: head,
+      model: "next-model",
+      cwd: "next-workspace",
+    });
+    expect(forked).toMatchObject({
+      result: {
+        session: {
+          model: "next-model",
+          cwd: path.resolve(harness.cwd, "next-workspace"),
+          parentSessionId: started.sessionId,
+          forkEntryId: head,
+        },
+      },
+    });
+    const forkedId = (forked as { result: { session: { id: string } } }).result.session.id;
+
+    const widened = await harness.send("sandbox.mode", {
+      sessionId: forkedId,
+      mode: "workspace-write",
+      network: "full",
+    });
+    expect(widened).toMatchObject({ result: { mode: "read-only", network: "none" } });
+
+    const inherited = await harness.send("session.fork", {
+      sessionId: started.sessionId,
+      entryId: head,
+    });
+    expect(inherited).toMatchObject({
+      result: { session: { model: "faux-model", cwd: harness.cwd } },
+    });
+
+    expect(await harness.store.entries(started.sessionId)).toEqual(sourceEntries);
+  });
 });
+
+function settledCount(events: AgentEvent[]): number {
+  return events.filter((event) => event.type === "settled").length;
+}

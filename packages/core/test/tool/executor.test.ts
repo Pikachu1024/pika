@@ -1,5 +1,5 @@
+import { describe, expect, it, mock } from "bun:test";
 import type { ToolCall, ToolResult } from "@pika-harness/schema";
-import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { ToolBatchExecutor } from "../../src/tool/executor.js";
 import { ToolRegistry } from "../../src/tool/registry.js";
@@ -65,7 +65,7 @@ function makeRegistry(...tools: Tool[]): ToolRegistry {
 
 describe("ToolBatchExecutor", () => {
   it("returns a validation error without executing when a required argument is missing", async () => {
-    const execute = vi.fn(async () => textOutput("ok"));
+    const execute = mock(async () => textOutput("ok"));
     const tool: Tool = {
       name: "write_file",
       description: "writes a file",
@@ -89,7 +89,7 @@ describe("ToolBatchExecutor", () => {
   });
 
   it("returns an argument error for invalid JSON without executing", async () => {
-    const execute = vi.fn(async () => textOutput("ok"));
+    const execute = mock(async () => textOutput("ok"));
     const tool: Tool = {
       name: "read_file",
       description: "reads a file",
@@ -109,7 +109,7 @@ describe("ToolBatchExecutor", () => {
   });
 
   it("returns an unknown-tool error and continues the turn", async () => {
-    const execute = vi.fn(async () => textOutput("ok"));
+    const execute = mock(async () => textOutput("ok"));
     const tool: Tool = {
       name: "read_file",
       description: "reads a file",
@@ -274,7 +274,7 @@ describe("ToolBatchExecutor", () => {
   });
 
   it("does not execute when the signal is already aborted", async () => {
-    const execute = vi.fn(async () => textOutput("ok"));
+    const execute = mock(async () => textOutput("ok"));
     const tool: Tool = {
       name: "read_file",
       description: "reads a file",

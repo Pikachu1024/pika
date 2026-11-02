@@ -182,9 +182,9 @@ await manager.close();
 ## 3. 验证
 
 ```bash
-pnpm exec vitest run packages/adapters/test/skills packages/adapters/test/mcp
-pnpm --filter @pika-harness/adapters typecheck
-pnpm boundary
+bun test packages/adapters/test/skills packages/adapters/test/mcp
+bun run --filter @pika-harness/adapters typecheck
+bun run boundary
 ```
 
 覆盖点：

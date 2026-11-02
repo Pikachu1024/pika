@@ -33,6 +33,8 @@ export type {
   McpToolDescriptor,
 } from "./mcp/manager.js";
 export { createMcpManager } from "./mcp/manager.js";
+export type { OpenAiCompatibleModelOptions } from "./provider/openai-compatible.js";
+export { createOpenAiCompatibleModel } from "./provider/openai-compatible.js";
 export type { PiAiProviderOptions, PiAiStream } from "./provider/pi-ai-provider.js";
 export { PiAiProvider } from "./provider/pi-ai-provider.js";
 export type { RawCaptureProviderOptions } from "./provider/raw-capture.js";

@@ -76,21 +76,23 @@
 
 ## 4. 方法
 
-| 方法               | 参数                                  | 结果                 |
-| ------------------ | ------------------------------------- | -------------------- |
-| `initialize`       | `{ clientName?, protocolVersion? }`   | 协议版本与服务端能力 |
-| `session.start`    | `{ cwd, model?, sandbox? }`           | 会话摘要与生效沙箱   |
-| `session.resume`   | `{ sessionId }`                       | 会话摘要与生效沙箱   |
-| `session.fork`     | `{ sessionId, entryId }`              | 新会话元数据         |
-| `session.list`     | `{}`                                  | 会话摘要数组         |
-| `turn.start`       | `{ sessionId, text }`                 | `{ accepted: true }` |
-| `turn.steer`       | `{ sessionId, text }`                 | `{ accepted: true }` |
-| `turn.follow_up`   | `{ sessionId, text }`                 | `{ accepted: true }` |
-| `turn.interrupt`   | `{ sessionId, reason? }`              | `{ accepted: true }` |
-| `approval.respond` | `{ sessionId, approvalId, decision }` | `{ accepted: true }` |
-| `subscribe`        | `{ sessionId }`                       | `{ subscriptionId }` |
-| `unsubscribe`      | `{ subscriptionId }`                  | `{ removed }`        |
-| `sandbox.mode`     | `{ sessionId, mode, network? }`       | 生效沙箱             |
+| 方法               | 参数                                         | 结果                 |
+| ------------------ | -------------------------------------------- | -------------------- |
+| `initialize`       | `{ clientName?, protocolVersion? }`          | 协议版本与服务端能力 |
+| `session.start`    | `{ cwd, model?, sandbox? }`                  | 会话摘要与生效沙箱   |
+| `session.resume`   | `{ sessionId }`                              | 会话摘要与生效沙箱   |
+| `session.fork`     | `{ sessionId, entryId, model?, llm?, cwd? }` | 新会话元数据         |
+| `session.list`     | `{}`                                         | 会话摘要数组         |
+| `session.compact`  | `{ sessionId }`                              | 压缩前后的 token 数  |
+| `session.btw`      | `{ sessionId, text }`                        | 旁路回答与用量       |
+| `turn.start`       | `{ sessionId, text }`                        | `{ accepted: true }` |
+| `turn.steer`       | `{ sessionId, text }`                        | `{ accepted: true }` |
+| `turn.follow_up`   | `{ sessionId, text }`                        | `{ accepted: true }` |
+| `turn.interrupt`   | `{ sessionId, reason? }`                     | `{ accepted: true }` |
+| `approval.respond` | `{ sessionId, approvalId, decision }`        | `{ accepted: true }` |
+| `subscribe`        | `{ sessionId }`                              | `{ subscriptionId }` |
+| `unsubscribe`      | `{ subscriptionId }`                         | `{ removed }`        |
+| `sandbox.mode`     | `{ sessionId, mode, network? }`              | 生效沙箱             |
 
 `turn.*` 的响应只表示命令进入串行队列；真正的完成信号是订阅流中的 `settled` 事件。
 
@@ -148,6 +150,84 @@
       "title": "New session"
     },
     "sandbox": { "backend": "none", "mode": "workspace-write", "network": "none" }
+  }
+}
+```
+
+### session.fork
+
+`model`、`llm` 和 `cwd` 可选。省略时继承源会话；`cwd` 相对于服务端默认工作目录解析，并重新走一遍沙箱上限检查。源会话仍在运行（未 settled）时返回 1002。
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "session.fork",
+  "params": {
+    "sessionId": "session_1",
+    "entryId": "entry_9",
+    "model": "local-model",
+    "llm": { "baseUrl": "http://127.0.0.1:59000/v1", "apiKey": "secret", "model": "local-model" },
+    "cwd": "worktrees/feature"
+  }
+}
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "id": "session_4",
+    "cwd": "/workspace/worktrees/feature",
+    "model": "local-model",
+    "status": "settled",
+    "createdAt": "2026-01-01T00:00:05.000Z",
+    "updatedAt": "2026-01-01T00:00:05.000Z",
+    "lastEntryId": "entry_9",
+    "title": "Fork of session_1"
+  }
+}
+```
+
+`llm` 只影响该 fork 的 provider，不会写进会话日志；`model` 会写入会话元数据。
+
+### session.compact
+
+只在会话 settled 时执行；否则返回 1002。返回压缩前后的 token 估算值，`compacted` 为 `false` 表示没有可压缩的切点。
+
+```json
+{ "jsonrpc": "2.0", "id": 4, "method": "session.compact", "params": { "sessionId": "session_1" } }
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "result": { "compacted": true, "tokensBefore": 4200, "tokensAfter": 900 }
+}
+```
+
+### session.btw
+
+旁路提问：使用当前历史和空工具列表调用 provider，不写入会话条目、不修改历史或用量统计。会话未 settled 时返回 1002。
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "method": "session.btw",
+  "params": { "sessionId": "session_1", "text": "what did we just do?" }
+}
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "result": {
+    "text": "You summarized the repository.",
+    "usage": { "inputTokens": 120, "outputTokens": 10 }
   }
 }
 ```
@@ -230,7 +310,7 @@ subscription.onEvent((event) => {
 await client.prompt(session.id, "summarize the repository");
 ```
 
-SDK 还提供 `resumeSession`、`forkSession`、`listSessions`、`steer`、`followUp`、`interrupt`、`setSandboxMode` 和 `unsubscribe`。订阅对象同时是 `AsyncIterable<AgentEvent>`，可以 `for await` 消费。
+SDK 还提供 `resumeSession`、`forkSession`（支持 `model`、`llm`、`cwd` 覆盖）、`listSessions`、`steer`、`followUp`、`interrupt`、`setSandboxMode`、`compactSession`、`askSideQuestion` 和 `unsubscribe`。订阅对象同时是 `AsyncIterable<AgentEvent>`，可以 `for await` 消费。
 
 ## 7. CLI
 
@@ -238,32 +318,32 @@ CLI 只依赖 `schema` 和 `client`，通过 WebSocket 连接服务端。
 
 ```bash
 # 终端一：启动演示服务端（确定性 echo provider）
-pnpm server
+bun run server
 
 # 终端二：一次性提问
-pnpm cli -- --prompt "hello harness"
+bun run cli --prompt "hello harness"
 
 # 续接已有会话
-pnpm cli -- --session session_1 --prompt "continue"
+bun run cli --session session_1 --prompt "continue"
 
 # 交互模式（pi-tui）：输入消息，/approve 或 /deny 处理升级，/quit 退出
-pnpm cli
+bun run cli
 ```
 
 指定服务端地址、工作目录和初始沙箱：
 
 ```bash
 PIKA_SERVER_URL=ws://127.0.0.1:7331 \
-  pnpm cli -- --cwd /path/to/workspace --sandbox-mode read-only --network none
+  bun run cli --cwd /path/to/workspace --sandbox-mode read-only --network none
 ```
 
 一次性模式遇到审批请求时默认拒绝，避免非交互场景静默放宽权限；需要升级时使用交互模式。
 
 ## 8. 验证
 
-- 协议 schema 与错误形状：`pnpm vitest run packages/schema/test/protocol.test.ts`
-- stdio 与 in-process 事件序列一致：`pnpm vitest run test/protocol-transport.test.ts`
-- WebSocket 多订阅与退订：`pnpm vitest run test/websocket.test.ts`
-- 审批路由与客户端不可绕过沙箱：`pnpm vitest run packages/server/test/session-server.test.ts`
-- SDK 端到端（工具、审批、steer、interrupt）：`pnpm vitest run test/sdk.test.ts`
-- CLI 边界：`pnpm boundary`
+- 协议 schema 与错误形状：`bun test packages/schema/test/protocol.test.ts`
+- stdio 与 in-process 事件序列一致：`bun test test/protocol-transport.test.ts`
+- WebSocket 多订阅与退订：`bun test test/websocket.test.ts`
+- 审批路由与客户端不可绕过沙箱：`bun test packages/server/test/session-server.test.ts`
+- SDK 端到端（工具、审批、steer、interrupt）：`bun test test/sdk.test.ts`
+- CLI 边界：`bun run boundary`

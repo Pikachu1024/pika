@@ -1,8 +1,8 @@
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent, SessionMeta } from "@pika-harness/schema";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { JsonlSessionStore } from "../../src/storage/jsonl-store.js";
 import { SqliteSessionIndex } from "../../src/storage/sqlite-index.js";
 

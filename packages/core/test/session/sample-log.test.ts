@@ -1,7 +1,7 @@
+import { describe, expect, it } from "bun:test";
 import { readFile } from "node:fs/promises";
 import type { SessionEntry } from "@pika-harness/schema";
 import { SessionEntrySchema } from "@pika-harness/schema";
-import { describe, expect, it } from "vitest";
 import { replaySession } from "../../src/session/replay.js";
 
 describe("docs sample session log", () => {

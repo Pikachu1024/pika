@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { createCompactionPolicy, planCompaction } from "../../src/context/compaction.js";
 import type { LlmMessage } from "../../src/provider.js";
 

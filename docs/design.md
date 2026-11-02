@@ -144,7 +144,7 @@ type LlmEvent =
 
 工具声明由 Zod JSON Schema 经 TypeBox 的 `Type.Unsafe` 桥接给 pi-ai。适配器从 assistant 历史或工具消息中恢复 `toolName`；当 provider 已经流式给出参数时，`toolcall_end` 不重复发送完整参数。
 
-适配器支持注入 `stream` 与 `now`，因此单元测试不访问网络，时间戳也可确定。真实链路冒烟测试是可选步骤，不进入 `pnpm check` 或 CI。
+适配器支持注入 `stream` 与 `now`，因此单元测试不访问网络，时间戳也可确定。真实链路冒烟测试是可选步骤，不进入 `bun run check` 或 CI。
 
 ### 3.3 测试
 

@@ -112,13 +112,13 @@ provider 凭据只保留在 harness 进程内，不传给工具子进程。子�
 
 ## 6. 强制检查
 
-`pnpm boundary` 运行 `scripts/check-boundaries.mjs`，扫描 `packages/*/src` 与 `apps/*/src`，检查：
+`bun run boundary` 运行 `scripts/check-boundaries.mjs`，扫描 `packages/*/src` 与 `apps/*/src`，检查：
 
 - 每个包是否导入了禁止依赖的工作区包；
 - `node:child_process` 是否只出现在 `packages/adapters/src/sandbox/`；
 - 源码是否使用动态 `import()` 或 `require()`。
 
-`pnpm check` 依次执行 typecheck、lint、boundary 和 test，是提交前的最低门槛。
+`bun run check` 依次执行 typecheck、lint、boundary 和 test，是提交前的最低门槛。
 
 ## 7. 当前状态
 

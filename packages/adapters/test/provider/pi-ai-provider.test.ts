@@ -1,3 +1,4 @@
+import { describe, expect, it } from "bun:test";
 import type {
   AssistantMessage,
   AssistantMessageEvent,
@@ -6,7 +7,6 @@ import type {
   ProviderStreamOptions,
 } from "@mariozechner/pi-ai";
 import type { LlmEvent, LlmRequest } from "@pika-harness/core";
-import { describe, expect, it } from "vitest";
 import type { PiAiStream } from "../../src/provider/pi-ai-provider.js";
 import { PiAiProvider } from "../../src/provider/pi-ai-provider.js";
 
@@ -127,7 +127,7 @@ describe("PiAiProvider", () => {
     ]);
     expect(entry?.context.messages[0]).toEqual({
       role: "user",
-      content: [{ type: "text", text: "read a.txt" }],
+      content: "read a.txt",
       timestamp: 42,
     });
     expect(entry?.context.messages[1]).toMatchObject({
@@ -341,6 +341,36 @@ describe("PiAiProvider", () => {
     expect(mapped.at(-1)).toEqual({
       type: "error",
       error: { code: "aborted", message: "request aborted", retryable: false },
+    });
+  });
+
+  it("keeps content blocks for user messages that contain images", async () => {
+    const captured: Captured[] = [];
+    const provider = new PiAiProvider({ model, stream: fakeStream([], captured) });
+    const imageRequest: LlmRequest = {
+      ...request,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "describe" },
+            { type: "image", data: "aGVsbG8=", mediaType: "image/png" },
+          ],
+        },
+      ],
+    };
+
+    for await (const _event of provider.stream(imageRequest, new AbortController().signal)) {
+      // Drain the stream; the captured context is the assertion target.
+    }
+
+    expect(captured[0]?.context.messages[0]).toEqual({
+      role: "user",
+      content: [
+        { type: "text", text: "describe" },
+        { type: "image", data: "aGVsbG8=", mimeType: "image/png" },
+      ],
+      timestamp: expect.any(Number),
     });
   });
 

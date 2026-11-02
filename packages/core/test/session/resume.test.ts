@@ -1,5 +1,5 @@
+import { describe, expect, it } from "bun:test";
 import type { SessionMeta } from "@pika-harness/schema";
-import { describe, expect, it } from "vitest";
 import { createIdGenerator } from "../../src/clock.js";
 import { createEventCollector } from "../../src/events.js";
 import { FauxProvider } from "../../src/provider/faux-provider.js";

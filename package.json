@@ -3,23 +3,29 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.34.9",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "engines": {
-    "node": ">=24"
+    "bun": ">=1.4.0"
   },
   "scripts": {
-    "build": "pnpm -r --if-present build",
+    "build": "bun run build:js && bun run build:binary",
+    "build:js": "bun run --filter '*' build",
+    "build:binary": "bun scripts/build-binaries.ts",
+    "link:global": "bun run build:js && cd apps/cli && bun link && cd ../../packages/server && bun link",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
-    "test:sandbox": "PIKA_REQUIRE_SANDBOX_BACKENDS=1 vitest run packages/adapters/test/sandbox",
-    "test:watch": "vitest",
+    "test": "bun test",
+    "test:sandbox": "PIKA_REQUIRE_SANDBOX_BACKENDS=1 bun test packages/adapters/test/sandbox",
+    "test:watch": "bun test --watch",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "boundary": "node scripts/check-boundaries.mjs",
-    "check": "pnpm typecheck && pnpm lint && pnpm boundary && pnpm test",
-    "server": "tsx packages/server/src/bin.ts",
-    "cli": "tsx apps/cli/src/bin.ts"
+    "boundary": "bun scripts/check-boundaries.mjs",
+    "check": "bun run typecheck && bun run lint && bun run boundary && bun run test",
+    "server": "bun packages/server/src/bin.ts",
+    "cli": "bun apps/cli/src/bin.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",
@@ -29,10 +35,13 @@
     "@pika-harness/core": "workspace:*",
     "@pika-harness/schema": "workspace:*",
     "@pika-harness/server": "workspace:*",
+    "@types/bun": "1.4.4",
     "@types/node": "24.19.2",
-    "tsx": "4.23.15",
     "typescript": "5.9.3",
-    "vitest": "3.2.7",
     "zod": "4.6.7"
-  }
+  },
+  "trustedDependencies": [
+    "@google/genai",
+    "protobufjs"
+  ]
 }

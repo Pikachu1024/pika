@@ -1,8 +1,11 @@
+import { describe, expect, it } from "bun:test";
+import path from "node:path";
 import { PikaClient } from "@pika-harness/client";
 import type { LlmEvent, LlmRequest, ModelInfo, Provider, Tool } from "@pika-harness/core";
+import { FauxProvider } from "@pika-harness/core";
 import type { AgentEvent } from "@pika-harness/schema";
+import type { CompactionFactory } from "@pika-harness/server";
 import { createInProcessTransportPair } from "@pika-harness/server";
-import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { collectUntilSettled, createTestServer, textTurn, toolCallTurn } from "./helpers.js";
 
@@ -79,6 +82,22 @@ function textDeltas(events: AgentEvent[]): string[] {
   );
 }
 
+const longTurn: LlmEvent[] = [
+  { type: "text_delta", text: "x".repeat(400) },
+  { type: "done", stopReason: "end" },
+];
+
+const summaryTurn: LlmEvent[] = [
+  { type: "text_delta", text: "short summary" },
+  { type: "done", stopReason: "end" },
+];
+
+const sideTurn: LlmEvent[] = [
+  { type: "text_delta", text: "side answer" },
+  { type: "usage", usage: { inputTokens: 3, outputTokens: 2 } },
+  { type: "done", stopReason: "end" },
+];
+
 describe("typed SDK", () => {
   it("completes a session with a tool call, approval, and final message", async () => {
     const env = await createTestServer({
@@ -113,6 +132,70 @@ describe("typed SDK", () => {
 
       const sessions = await client.listSessions();
       expect(sessions.map((session) => session.id)).toContain(started.session.id);
+    } finally {
+      client.close();
+      await env.cleanup();
+    }
+  });
+
+  it("compacts, asks a side question, and forks with overrides", async () => {
+    const provider = new FauxProvider([longTurn, longTurn, summaryTurn, sideTurn]);
+    const compaction: CompactionFactory = (_context, streamProvider) => ({
+      contextWindow: 1_000_000,
+      reserveTokens: 0,
+      keepRecentTurns: 1,
+      summarize: async (messages) => {
+        let text = "";
+        for await (const event of streamProvider.stream(
+          { model: "faux-model", system: "", messages, tools: [] },
+          new AbortController().signal,
+        )) {
+          if (event.type === "text_delta") text += event.text;
+          else if (event.type === "error") throw new Error(event.error.message);
+          else if (event.type === "done") break;
+        }
+        return text;
+      },
+    });
+    const env = await createTestServer({ provider, compaction });
+    const client = await connect(env);
+    try {
+      const started = await client.startSession({ cwd: "." });
+      const subscription = await client.subscribe(started.session.id);
+
+      await client.prompt(started.session.id, "first");
+      await collectUntilSettled(subscription);
+      await client.prompt(started.session.id, "second");
+      await collectUntilSettled(subscription);
+
+      const compacted = await client.compactSession(started.session.id);
+      expect(compacted.compacted).toBe(true);
+      expect(compacted.tokensBefore).toBeGreaterThan(compacted.tokensAfter);
+
+      const side = await client.askSideQuestion(started.session.id, "why?");
+      expect(side).toEqual({ text: "side answer", usage: { inputTokens: 3, outputTokens: 2 } });
+
+      const source = (await client.listSessions()).find(
+        (session) => session.id === started.session.id,
+      );
+      if (source?.lastEntryId === undefined || source.lastEntryId === null) {
+        throw new Error("missing source entry");
+      }
+
+      const forked = await client.forkSession(started.session.id, source.lastEntryId, {
+        model: "fork-model",
+        cwd: "sub",
+        llm: { baseUrl: "http://127.0.0.1:59000/v1", model: "fork-model", apiKey: "secret" },
+      });
+      expect(forked.session).toMatchObject({
+        model: "fork-model",
+        cwd: path.join(env.cwd, "sub"),
+      });
+
+      const unchanged = (await client.listSessions()).find(
+        (session) => session.id === started.session.id,
+      );
+      expect(unchanged).toMatchObject({ model: "faux-model", cwd: env.cwd });
     } finally {
       client.close();
       await env.cleanup();
@@ -171,6 +254,31 @@ describe("typed SDK", () => {
       const stopped = second.filter((event) => event.type === "turn_end").at(-1);
       expect(stopped?.type === "turn_end" ? stopped.stopReason : undefined).toBe("end");
       expect(textDeltas(second)).toEqual(["steered"]);
+    } finally {
+      client.close();
+      await env.cleanup();
+    }
+  });
+
+  it("ends subscriptions when the transport closes", async () => {
+    const env = await createTestServer();
+    const [serverSide, clientSide] = createInProcessTransportPair();
+    env.server.attach(serverSide);
+    const client = new PikaClient({ transport: clientSide });
+    try {
+      await client.initialize();
+      const started = await client.startSession({ cwd: "." });
+      const subscription = await client.subscribe(started.session.id);
+      const iterator = subscription[Symbol.asyncIterator]();
+      const pending = iterator.next();
+
+      clientSide.close();
+
+      await expect(pending).resolves.toEqual({ value: undefined, done: true });
+      await expect(iterator.next()).resolves.toEqual({ value: undefined, done: true });
+      await expect(client.prompt(started.session.id, "after close")).rejects.toThrow(
+        "client is closed",
+      );
     } finally {
       client.close();
       await env.cleanup();

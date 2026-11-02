@@ -1,6 +1,6 @@
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import http from "node:http";
 import net from "node:net";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { isHostAllowed, startNetworkProxy } from "../../src/sandbox/network-proxy.js";
 
 function listen(server: net.Server | http.Server): Promise<number> {

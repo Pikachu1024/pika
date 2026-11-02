@@ -4,9 +4,9 @@ Pika Harness is a learning-first TypeScript agent harness. The core runtime, con
 
 ## Read first
 
-- `openspec/changes/agent-harness-foundation/proposal.md`
-- `openspec/changes/agent-harness-foundation/design.md`
-- `openspec/changes/agent-harness-foundation/tasks.md`
+- `openspec/changes/archive/2026-11-02-agent-harness-foundation/proposal.md`
+- `openspec/changes/archive/2026-11-02-agent-harness-foundation/design.md`
+- `openspec/changes/archive/2026-11-02-agent-harness-foundation/tasks.md`
 - `docs/architecture.md`
 
 The OpenSpec change is the source of truth for scope. If code and the change disagree, update the change before changing the code.
@@ -34,18 +34,19 @@ scripts/             repository checks
 - `client` may depend only on `schema`.
 - `cli` may depend on `schema` and `client`. It must not import `core`, `server`, or `adapters`.
 - All subprocess execution goes through the sandbox executor. Only `packages/adapters/src/sandbox/` may import `node:child_process`.
-- Run `pnpm boundary` to verify these rules.
+- Run `bun run boundary` to verify these rules.
 
 ## Commands
 
-Use Node 24 (`.nvmrc`) and pnpm 10. Install dependencies with `pnpm install`.
+Use Bun 1.4 or newer (`bun.lock`, Bun workspaces). Install dependencies with `bun install`. Type checking stays on `tsc`; lint and format stay on Biome.
 
-- `pnpm check`: typecheck, lint, boundary check, and tests
-- `pnpm typecheck`
-- `pnpm test`
-- `pnpm lint`
-- `pnpm format`
-- `pnpm boundary`
+- `bun run check`: typecheck, lint, boundary check, and tests
+- `bun run typecheck`
+- `bun run test`
+- `bun run lint`
+- `bun run format`
+- `bun run boundary`
+- `bun run build:binary`: standalone `bun build --compile` binaries
 
 Do not run tests against live providers. Use the faux provider for deterministic tests. Live smoke tests are opt-in and require explicit credentials.
 
@@ -63,7 +64,7 @@ Do not run tests against live providers. Use the faux provider for deterministic
 
 ## Testing
 
-- Vitest. Place tests in `packages/<name>/test` or `apps/<name>/test`.
+- Bun's test runner (`bun:test`). Place tests in `packages/<name>/test` or `apps/<name>/test`.
 - Use the faux provider for deterministic loop and replay tests.
 - Every bug fix gets a regression test.
 - Sandbox changes must pass the conformance suite for every affected backend.

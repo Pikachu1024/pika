@@ -245,13 +245,13 @@ type SandboxDecision = {
 
 ```bash
 # 本机可用的后端；不可用的后端跳过
-pnpm vitest run packages/adapters/test/sandbox
+bun test packages/adapters/test/sandbox
 
 # 要求所有适用后端必须存在；CI 使用
-pnpm test:sandbox
+bun run test:sandbox
 ```
 
-`pnpm test:sandbox` 设置 `PIKA_REQUIRE_SANDBOX_BACKENDS=1`：在 macOS 要求 Seatbelt，在 Linux 要求 bubblewrap，并且始终要求 Docker CLI 与 daemon。CI 会安装 bubblewrap、放开 Ubuntu 24.04 的非特权用户命名空间限制，并拉取 `debian:bookworm-slim`。
+`bun run test:sandbox` 设置 `PIKA_REQUIRE_SANDBOX_BACKENDS=1`：在 macOS 要求 Seatbelt，在 Linux 要求 bubblewrap，并且始终要求 Docker CLI 与 daemon。CI 会安装 bubblewrap、放开 Ubuntu 24.04 的非特权用户命名空间限制，并拉取 `debian:bookworm-slim`。
 
 Docker 后端暂不支持自动清理超时后遗留的容器，因此用例标记为跳过；Seatbelt 和 bubblewrap 覆盖该用例。
 

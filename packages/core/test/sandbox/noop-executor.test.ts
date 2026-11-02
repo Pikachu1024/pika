@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { NoopExecutor, SandboxExecutionError } from "../../src/sandbox/noop-executor.js";
 import { resolveSandboxPolicy } from "../../src/sandbox/policy.js";
 

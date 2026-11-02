@@ -19,18 +19,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          version: 10.34.9
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm lint
-      - run: pnpm boundary
-      - run: pnpm test
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run lint
+      - run: bun run boundary
+      - run: bun run test
       - name: Install sandbox backends
         run: |
           sudo apt-get update
@@ -39,4 +35,4 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           docker pull debian:bookworm-slim
       - name: Sandbox conformance
-        run: pnpm test:sandbox
+        run: bun run test:sandbox

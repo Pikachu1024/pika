@@ -1,3 +1,4 @@
+import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -7,7 +8,6 @@ import type { Tool } from "@pika-harness/core";
 import { replaySession } from "@pika-harness/core";
 import type { AgentEvent, SessionEntry } from "@pika-harness/schema";
 import { createInProcessTransportPair } from "@pika-harness/server";
-import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { collectUntilSettled, createTestServer, textTurn, toolCallTurn } from "./helpers.js";
 

@@ -1,8 +1,8 @@
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { SandboxPolicy } from "@pika-harness/schema";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createPathPolicy } from "../../src/sandbox/path-policy.js";
 import { resolveSandboxPolicy } from "../../src/sandbox/policy.js";
 import { createEditFileTool } from "../../src/tool/file/edit-file.js";

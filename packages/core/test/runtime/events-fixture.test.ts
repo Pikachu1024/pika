@@ -1,7 +1,7 @@
+import { describe, expect, it } from "bun:test";
 import { readFile } from "node:fs/promises";
 import type { AgentEvent, ToolResult } from "@pika-harness/schema";
 import { AgentEventSchema } from "@pika-harness/schema";
-import { describe, expect, it } from "vitest";
 import type { Clock } from "../../src/clock.js";
 import { createIdGenerator } from "../../src/clock.js";
 import { createEventCollector } from "../../src/events.js";

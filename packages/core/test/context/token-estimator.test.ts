@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { createTokenEstimator, estimateMessages } from "../../src/context/token-estimator.js";
 import type { LlmMessage } from "../../src/provider.js";
 

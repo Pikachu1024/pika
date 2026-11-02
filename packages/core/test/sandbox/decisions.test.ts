@@ -1,5 +1,5 @@
+import { describe, expect, it } from "bun:test";
 import type { SandboxPolicy, ToolCall } from "@pika-harness/schema";
-import { describe, expect, it } from "vitest";
 import {
   canWidenPolicy,
   classifyToolCall,

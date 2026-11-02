@@ -27,13 +27,13 @@
 | 项目        | 选择                                                                                     | 说明                                                                         |
 | ----------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | 语言        | TypeScript 5.9.3                                                                         | 与 `pi-ai`、`pi-tui`、MCP SDK 生态一致；类型契约可同时服务运行时、协议和测试 |
-| 运行时      | Node.js >= 24                                                                            | 原生 ESM、现代 `fs`/`crypto`、`AbortSignal`、进程组能力；与 `.nvmrc` 一致    |
-| 包管理      | pnpm 10.34.9                                                                             | workspace 依赖清晰，安装快，适合多包仓库                                     |
+| 运行时      | Bun >= 1.4                                                                               | 原生 ESM、现代 `fs`/`crypto`、`AbortSignal`、进程组能力；直接执行 TS         |
+| 包管理      | Bun workspaces                                                                           | `bun.lock` 单一锁文件，安装快，适合多包仓库                                  |
 | 模块系统    | ESM + `NodeNext`                                                                         | 相对导入带 `.js` 后缀；包边界可静态检查                                      |
 | 类型严格度  | `strict`、`noUncheckedIndexedAccess`、`exactOptionalPropertyTypes`、`erasableSyntaxOnly` | 禁止 `enum`、`namespace`、参数属性等不可擦除语法，保证类型可被安全剥离       |
-| 构建        | `tsc --noEmit`                                                                           | 当前只做类型检查，各包直接导出 `src`；发布构建后续再加                       |
+| 构建        | `tsc -p tsconfig.build.json` + `bun build --compile`                                     | 各包输出 `dist`；二进制内嵌 Bun 运行时                                       |
 | 格式化/检查 | Biome 2.6.4                                                                              | 一个工具完成 format 与 lint，配置简单                                        |
-| 测试        | Vitest 3.2.7                                                                             | 与 TS/ESM 集成好，适合 fixture 与异步流测试                                  |
+| 测试        | Bun test 1.4 (`bun:test`)                                                                | 与运行时同一工具链，适合 fixture 与异步流测试                                |
 | 边界检查    | 自研 `scripts/check-boundaries.mjs`                                                      | 检查工作区依赖方向、`child_process` 唯一入口、禁止动态导入                   |
 
 替代语言的取舍：
@@ -145,7 +145,6 @@ SQLite 只做派生索引：会话列表、token/成本统计、全文搜索。�
 | gVisor / Firecracker            | Linux       | 微虚拟机/用户态内核，很高 | 基础设施            | 多租户                    | 后续   |
 | Apple Containerization          | macOS 26+   | 每容器一个 Linux VM       | 系统框架            | 本地强隔离                | 后续   |
 | 云沙箱                          | 托管        | 很高                      | 外部服务            | 产品化                    | 后续   |
-| Node `--permission`             | 跨平台      | 仅 harness 进程           | Node 24             | 插件隔离                  | 后续   |
 
 选择顺序：先在 macOS 用 Seatbelt 跑通一致性套件，再补 bubblewrap 与 Docker。`sandbox-exec` 虽被 Apple 标记废弃，但仍可用；放在 `Executor` 接口后，未来可替换。Docker 不作为 macOS 日常默认，因为大仓库的文件系统开销明显。
 
@@ -163,23 +162,23 @@ SQLite 只做派生索引：会话列表、token/成本统计、全文搜索。�
 
 ## 12. 测试与工程工具链
 
-- **Vitest**：单元、集成、fixture 回放。
+- **Bun test**：单元、集成、fixture 回放，与安装、运行、构建共用同一工具链。
 - **FauxProvider**：脚本化 `LlmEvent`，让运行时测试完全确定。
 - **注入式 provider transport**：适配器测试不访问网络。
 - **固定时钟与 ID**：事件 fixture 做深比较。
 - **契约测试**：内存存储与 JSONL 存储共享同一套 `SessionStore` 测试。
 - **一致性套件**：每个沙箱后端跑同一组安全测试。
-- **边界检查**：`pnpm boundary` 阻止错误依赖与直接 `child_process`。
-- **`pnpm check`**：typecheck、lint、boundary、test 一条命令。
+- **边界检查**：`bun run boundary` 阻止错误依赖与直接 `child_process`。
+- **`bun run check`**：typecheck、lint、boundary、test 一条命令。
 
-不选 Jest 的原因：Vitest 与 ESM/TypeScript 的集成更直接，配置更少。不引入 ESLint + Prettier 的原因：Biome 一个工具覆盖 format 与 lint，减少配置面和版本冲突。
+不选 Jest/Vitest 的原因：Bun 已内置测试运行器，避免额外配置和第二个运行时。不引入 ESLint + Prettier 的原因：Biome 一个工具覆盖 format 与 lint，减少配置面和版本冲突。
 
 ## 13. 选型结论汇总
 
 | 领域         | 最终选择                        | 状态   | 替换点              |
 | ------------ | ------------------------------- | ------ | ------------------- |
-| 语言/运行时  | TypeScript + Node 24            | 已落地 | 无（核心决策）      |
-| 包管理       | pnpm workspace                  | 已落地 | 无                  |
+| 语言/运行时  | TypeScript + Bun 1.4            | 已落地 | 无（核心决策）      |
+| 包管理       | Bun workspaces                  | 已落地 | 无                  |
 | 模型接入     | `pi-ai`                         | 已接入 | `Provider` 接口     |
 | 终端 UI      | `pi-tui`                        | 规划   | 协议客户端          |
 | MCP          | 官方 SDK                        | 规划   | MCP 适配器          |
@@ -189,7 +188,7 @@ SQLite 只做派生索引：会话列表、token/成本统计、全文搜索。�
 | 当前执行器   | `NodeProcessExecutor`（`none`） | 已落地 | `Executor` 接口     |
 | 强隔离       | Seatbelt / bubblewrap / Docker  | 规划   | 平台执行器          |
 | 协议         | JSON-RPC 2.0 风格               | 规划   | transport 层        |
-| 测试         | Vitest + FauxProvider           | 已落地 | 测试内部            |
+| 测试         | Bun test + FauxProvider         | 已落地 | 测试内部            |
 
 ## 14. 未决问题
 

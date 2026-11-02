@@ -1,8 +1,8 @@
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { SandboxPolicySchema } from "@pika-harness/schema";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   clampSandboxPolicy,
   resolveSandboxPolicy,

@@ -1,3 +1,4 @@
+import { describe, expect, it } from "bun:test";
 import type {
   AgentEvent,
   SessionEntry,
@@ -5,7 +6,6 @@ import type {
   SessionSummary,
   ToolResult,
 } from "@pika-harness/schema";
-import { describe, expect, it } from "vitest";
 import type { AgentRuntime, AgentState, RuntimeOptions } from "../../src/agent.js";
 import type { Clock } from "../../src/clock.js";
 import { createIdGenerator } from "../../src/clock.js";
@@ -571,5 +571,52 @@ describe("runtime turn loop", () => {
 
     expect(appended.map((entry) => entry.event)).toEqual(sink.events);
     expect(appended.every((entry) => entry.parentId === undefined)).toBe(true);
+  });
+
+  it("swallows a failed settled emission instead of leaking an unhandled rejection", async () => {
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown): void => {
+      rejections.push(reason);
+    };
+    process.on("unhandledRejection", onRejection);
+    try {
+      const store: SessionStore = {
+        async create(): Promise<void> {
+          throw new Error("not used");
+        },
+        async append(_sessionId: string, event: AgentEvent): Promise<SessionEntry> {
+          if (event.type === "settled") throw new Error("store offline");
+          return { id: `entry_${event.type}`, parentId: null, event };
+        },
+        async entries(): Promise<SessionEntry[]> {
+          throw new Error("not used");
+        },
+        async list(): Promise<SessionSummary[]> {
+          throw new Error("not used");
+        },
+        async fork(_sessionId: string, _entryId: string): Promise<SessionMeta> {
+          throw new Error("not used");
+        },
+        async close(): Promise<void> {
+          throw new Error("not used");
+        },
+      };
+      const provider = new FauxProvider([
+        [
+          { type: "text_delta", text: "hello" },
+          { type: "done", stopReason: "end" },
+        ],
+      ]);
+      const { runtime } = createHarness(provider, { sessionStore: store });
+
+      await runtime.prompt("hi");
+      await runtime.settled();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(rejections).toEqual([]);
+      expect(runtime.isSettled()).toBe(true);
+    } finally {
+      process.off("unhandledRejection", onRejection);
+    }
   });
 });

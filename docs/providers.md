@@ -67,7 +67,48 @@ for await (const event of provider.stream(request, signal)) {
 
 适配器支持 `apiKey`、`sessionId`、`cacheRetention`、`headers`、`temperature`、`maxOutputTokens` 与中止信号。`models()` 返回当前 provider 实例对应的单个模型信息，包括上下文窗口与最大输出。
 
-## 3. 测试
+## 3. 本地 OpenAI 兼容端点
+
+`createOpenAiCompatibleModel` 构造一个 `openai-completions` 模型描述，默认关闭严格服务端会拒绝的 OpenAI 专有字段（`store`、`stream_options`、`max_completion_tokens`、工具 `strict` 等）：
+
+```ts
+import { createOpenAiCompatibleModel, PiAiProvider } from "@pika-harness/adapters";
+
+const provider = new PiAiProvider({
+  model: createOpenAiCompatibleModel({
+    id: process.env.PIKA_LLM_MODEL ?? "local-model",
+    baseUrl: process.env.PIKA_LLM_BASE_URL ?? "http://127.0.0.1:8000/v1",
+    contextWindow: 32_768,
+    maxTokens: 4_096,
+  }),
+  apiKey: process.env.PIKA_LLM_API_KEY,
+});
+```
+
+`pika-server` 可直接通过环境变量切换：
+
+```bash
+PIKA_PROVIDER=openai \
+PIKA_LLM_BASE_URL=http://192.168.56.39:59000/v1 \
+PIKA_LLM_MODEL=jiuwei-tcm \
+PIKA_LLM_API_KEY=<key> \
+bun run server
+```
+
+可选 `PIKA_LLM_CONTEXT_WINDOW`、`PIKA_LLM_MAX_TOKENS`。纯文本用户消息会序列化为字符串；只有包含图片时才使用内容块数组，以兼容只接受字符串 `content` 的 OpenAI 兼容服务。
+
+CLI 也可以按会话覆盖端点，无需重启服务端：
+
+```bash
+pika --prompt "hello" \
+  --llm-base-url http://192.168.56.39:59000/v1 \
+  --llm-model jiuwei-tcm \
+  --llm-api-key <key>
+```
+
+也可用 `PIKA_LLM_BASE_URL`、`PIKA_LLM_MODEL`、`PIKA_LLM_API_KEY`、`PIKA_LLM_CONTEXT_WINDOW`、`PIKA_LLM_MAX_TOKENS` 环境变量提供；命令行参数优先。`--llm-base-url` 与 `--llm-model` 必须同时出现。API key 只保留在服务端内存中，不写入会话 JSONL。
+
+## 4. 测试
 
 单元测试通过 `stream` 选项注入假传输，不访问网络：
 
@@ -77,4 +118,4 @@ const provider = new PiAiProvider({ model, stream: fakeStream, now: () => 0 });
 
 运行时测试使用 `FauxProvider`，因为运行时不应依赖具体 provider。
 
-真实链路冒烟测试是可选步骤：只有显式设置环境变量并提供凭据时才运行，且不进入 `pnpm check` 或 CI。它只用于在修改适配器后验证真实端点。
+真实链路冒烟测试是可选步骤：只有显式设置环境变量并提供凭据时才运行，且不进入 `bun run check` 或 CI。它只用于在修改适配器后验证真实端点。

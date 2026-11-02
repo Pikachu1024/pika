@@ -1,5 +1,5 @@
+import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
 import { discoverAgentsFiles, loadAgentsInstructions } from "../../src/context/agents-md.js";
 
 const repoRoot = "/repo";

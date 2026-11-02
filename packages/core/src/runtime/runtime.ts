@@ -16,10 +16,13 @@ import type {
 import type {
   AgentRuntime,
   AgentState,
+  CompactionResult,
   RuntimeCompactionOptions,
   RuntimeOptions,
   RuntimeSandboxOptions,
+  SideQuestionResult,
 } from "../agent.js";
+import { NotSettledError } from "../agent.js";
 import type { Clock, IdGenerator } from "../clock.js";
 import { createIdGenerator, systemClock } from "../clock.js";
 import { hashPrompt } from "../context/hash.js";
@@ -134,6 +137,10 @@ class SingleWriterRuntime implements AgentRuntime {
     return this.#currentState;
   }
 
+  isSettled(): boolean {
+    return !this.#running && !this.#hasQueuedWork() && this.#currentState === "idle";
+  }
+
   /**
    * Starts a turn when idle; when a turn is already running the text becomes a follow-up turn.
    * Resolves once the command is accepted into the serialized queue; await settled() to wait.
@@ -196,6 +203,80 @@ class SingleWriterRuntime implements AgentRuntime {
     });
   }
 
+  /**
+   * Forces compaction below the threshold when a cut point exists.
+   * Uses a maintenance turn id so the log gains no empty turn.
+   */
+  async compact(): Promise<CompactionResult> {
+    if (!this.isSettled()) {
+      throw new NotSettledError();
+    }
+    this.#running = true;
+    this.#currentState = "compacting";
+    const turn: ActiveTurn = { id: this.#ids.next("turn"), number: this.#turnCounter };
+    try {
+      return await this.#compactIfNeeded(turn, "manual", true);
+    } finally {
+      this.#currentState = "idle";
+      this.#running = false;
+      if (this.#hasQueuedWork()) {
+        this.#wake();
+      } else {
+        this.#resolveSettled();
+      }
+    }
+  }
+
+  /**
+   * Answers on the side: no tools, no session entries, no history or counter changes.
+   * Prompts submitted while it runs are queued until it finishes.
+   */
+  async askSideQuestion(text: string): Promise<SideQuestionResult> {
+    if (!this.isSettled()) {
+      throw new NotSettledError();
+    }
+    this.#running = true;
+    this.#currentState = "streaming";
+    const controller = new AbortController();
+    let answer = "";
+    let usage: Usage | undefined;
+    let failure: NormalizedError | undefined;
+    try {
+      const request: LlmRequest = {
+        model: this.#model,
+        system: this.#systemPrompt,
+        messages: [...this.#history, { role: "user", content: [{ type: "text", text }] }],
+        tools: [],
+      };
+      for await (const event of this.#provider.stream(request, controller.signal)) {
+        if (event.type === "text_delta") {
+          answer += event.text;
+        } else if (event.type === "usage") {
+          usage = event.usage;
+        } else if (event.type === "error") {
+          failure = event.error;
+          break;
+        } else if (event.type === "done") {
+          break;
+        }
+      }
+    } catch (error) {
+      failure = providerFailure(error);
+    } finally {
+      this.#currentState = "idle";
+      this.#running = false;
+      if (this.#hasQueuedWork()) {
+        this.#wake();
+      } else {
+        this.#resolveSettled();
+      }
+    }
+    if (failure !== undefined) {
+      throw new Error(failure.message);
+    }
+    return { text: answer, ...(usage === undefined ? {} : { usage }) };
+  }
+
   #wake(): void {
     if (this.#running) {
       return;
@@ -203,21 +284,36 @@ class SingleWriterRuntime implements AgentRuntime {
     this.#running = true;
     void this.#runLoop().then(
       () => {
-        this.#finishRun();
+        this.#finishRun(true);
       },
       () => {
-        this.#finishRun();
+        this.#finishRun(false);
       },
     );
   }
 
-  #finishRun(): void {
+  #finishRun(completed: boolean): void {
     this.#running = false;
     if (this.#hasQueuedWork()) {
       this.#wake();
       return;
     }
-    this.#resolveSettled();
+    if (!completed) {
+      this.#resolveSettled();
+      return;
+    }
+    this.#detach(this.#settle());
+  }
+
+  async #settle(): Promise<void> {
+    try {
+      await this.#emitSettled();
+    } finally {
+      // A prompt that arrived while the settled event was in flight starts a new run.
+      if (!this.#hasQueuedWork()) {
+        this.#resolveSettled();
+      }
+    }
   }
 
   async #runLoop(): Promise<void> {
@@ -236,8 +332,6 @@ class SingleWriterRuntime implements AgentRuntime {
         await this.#emitAgentEnd();
       }
       this.#currentState = "idle";
-      await this.#emitSettled();
-      this.#resolveSettled();
     } catch (error) {
       this.#currentState = "idle";
       throw error;
@@ -329,7 +423,7 @@ class SingleWriterRuntime implements AgentRuntime {
           !overflowRetried &&
           !step.messageStarted &&
           isContextOverflow(step.error) &&
-          (await this.#compactIfNeeded(turn, "overflow", true))
+          (await this.#compactIfNeeded(turn, "overflow", true)).compacted
         ) {
           overflowRetried = true;
           continue;
@@ -697,7 +791,7 @@ class SingleWriterRuntime implements AgentRuntime {
     await this.#emissionChain;
   }
 
-  // Executor callbacks have no caller to observe a rejected emission.
+  // Runtime callbacks without a caller cannot observe a rejected emission.
   #detach(emission: Promise<unknown>): void {
     void emission.catch(() => undefined);
   }
@@ -910,18 +1004,18 @@ class SingleWriterRuntime implements AgentRuntime {
     turn: ActiveTurn,
     reason: "threshold" | "overflow" | "manual",
     force = false,
-  ): Promise<boolean> {
+  ): Promise<CompactionResult> {
+    const tokensBefore = estimateMessages(this.#history);
     const settings = this.#compaction;
     if (settings === undefined) {
-      return false;
+      return { compacted: false, tokensBefore, tokensAfter: tokensBefore };
     }
-    const tokensBefore = estimateMessages(this.#history);
     if (!force && tokensBefore <= settings.contextWindow - settings.reserveTokens) {
-      return false;
+      return { compacted: false, tokensBefore, tokensAfter: tokensBefore };
     }
     const cutIndex = findCompactionCut(this.#history, settings.keepRecentTurns, force);
     if (cutIndex <= 0) {
-      return false;
+      return { compacted: false, tokensBefore, tokensAfter: tokensBefore };
     }
 
     this.#currentState = "compacting";
@@ -953,7 +1047,7 @@ class SingleWriterRuntime implements AgentRuntime {
       tokensAfter,
     });
     this.#historyEntryIds = [entryId, ...this.#historyEntryIds.slice(cutIndex)];
-    return true;
+    return { compacted: true, tokensBefore, tokensAfter };
   }
 
   async #emitCompactionStart(

@@ -1,7 +1,7 @@
+import { describe, expect, it } from "bun:test";
 import type { ExecRequest } from "@pika-harness/core";
 import { resolveSandboxPolicy } from "@pika-harness/core";
 import type { NetworkPolicy } from "@pika-harness/schema";
-import { describe, expect, it } from "vitest";
 import { buildBwrapArgs } from "../../src/sandbox/bwrap-executor.js";
 import { buildDockerArgs } from "../../src/sandbox/docker-executor.js";
 import { renderSeatbeltProfile } from "../../src/sandbox/seatbelt-executor.js";
