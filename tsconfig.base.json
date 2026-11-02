@@ -24,7 +24,8 @@
       "@pika-harness/adapters": ["packages/adapters/src/index.ts"],
       "@pika-harness/server": ["packages/server/src/index.ts"],
       "@pika-harness/client": ["packages/client/src/index.ts"],
-      "@pika-harness/cli": ["apps/cli/src/index.ts"]
+      "@pika-harness/cli": ["apps/cli/src/index.ts"],
+      "@pika-harness/pika": ["apps/pika/src/index.ts"]
     }
   }
 }

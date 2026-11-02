@@ -12,22 +12,37 @@ const forbiddenImports = {
     "@pika-harness/client",
     "@pika-harness/adapters",
     "@pika-harness/cli",
+    "@pika-harness/pika",
   ],
   core: [
     "@pika-harness/server",
     "@pika-harness/client",
     "@pika-harness/adapters",
     "@pika-harness/cli",
+    "@pika-harness/pika",
   ],
-  adapters: ["@pika-harness/server", "@pika-harness/client", "@pika-harness/cli"],
-  server: ["@pika-harness/client", "@pika-harness/cli"],
+  adapters: [
+    "@pika-harness/server",
+    "@pika-harness/client",
+    "@pika-harness/cli",
+    "@pika-harness/pika",
+  ],
+  server: ["@pika-harness/client", "@pika-harness/cli", "@pika-harness/pika"],
   client: [
     "@pika-harness/core",
     "@pika-harness/server",
     "@pika-harness/adapters",
     "@pika-harness/cli",
+    "@pika-harness/pika",
   ],
-  cli: ["@pika-harness/core", "@pika-harness/server", "@pika-harness/adapters"],
+  cli: [
+    "@pika-harness/core",
+    "@pika-harness/server",
+    "@pika-harness/adapters",
+    "@pika-harness/pika",
+  ],
+  // apps/pika is the composition root and may import every workspace package.
+  pika: [],
 };
 
 const files = [];

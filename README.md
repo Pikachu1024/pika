@@ -7,7 +7,8 @@ Status: foundation. Implemented and tested: the normalized event schema, single-
 ## Layout
 
 ```
-apps/cli/            pi-tui terminal client
+apps/pika/           single `pika` entrypoint; starts a bundled local server
+apps/cli/            pi-tui terminal client (protocol-only)
 packages/schema/     protocol and event schemas
 packages/core/       runtime, context, prompt, tools, sandbox policy, session ports
 packages/server/     session manager, transports, approvals
@@ -24,38 +25,40 @@ Requires Bun 1.4 or newer.
 ```bash
 bun install
 bun run check
+bun apps/pika/src/bin.ts --prompt "hello"   # starts and stops a local server
 ```
+
+`pika` starts a server on `127.0.0.1` with an ephemeral port and a per-run token, then stops it when the client exits. Run `pika serve` if you want to keep a server running and connect later with `pika --url <ws://...>`.
 
 ## Build
 
 ```bash
-bun run build          # per-package dist plus standalone binaries
+bun run build          # per-package dist plus the standalone binary
 bun run build:js       # per-package dist only
-bun run build:binary   # standalone binaries only
+bun run build:binary   # standalone binary only
 ```
 
 The binary build uses `bun build --compile`, which embeds the Bun runtime and all dependencies, so the result does not need `node_modules`:
 
 ```bash
-./dist/bin/pika-server --port 7331
 ./dist/bin/pika --prompt "hello"
+./dist/bin/pika --help
 ```
 
-To run from a global install instead of the standalone binaries:
+To run from a global install instead of the standalone binary:
 
 ```bash
 bun run link:global
 pika --help
-pika-server --help
 ```
 
-`bun link` installs the shims into `~/.bun/bin`, which the Bun installer adds to `PATH`.
+`bun link` installs the shim into `~/.bun/bin`, which the Bun installer adds to `PATH`.
 
 See [Providers](docs/providers.md) for configuring an OpenAI-compatible LLM endpoint.
 
 ## Interactive client
 
-`pika` connects to `pika-server` over WebSocket and dispatches slash commands locally:
+`pika` connects to a local server over WebSocket and dispatches slash commands locally:
 
 ```text
 /help /models /model /config /status /usage /context
@@ -63,7 +66,7 @@ See [Providers](docs/providers.md) for configuring an OpenAI-compatible LLM endp
 /compact /btw /approve /deny /quit
 ```
 
-Model presets load from `.pika/models.json` or `PIKA_MODELS_FILE`; API keys are referenced by environment variable name only. `/model` and `/handoff` fork the current session instead of changing it in place. See [CLI](docs/cli.md) for the catalog format, precedence rules, and command semantics.
+Model presets load from `.pika/models.json` or `PIKA_MODELS_FILE`; API keys are referenced by environment variable name only. `/model` and `/handoff` fork the current session instead of changing it in place. See [CLI](docs/cli.md) for the local lifecycle, remote mode, catalog format, precedence rules, and command semantics.
 
 ## Commands
 

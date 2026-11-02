@@ -12,8 +12,7 @@ interface Target {
 }
 
 const targets: Target[] = [
-  { name: "pika", entry: "apps/cli/src/bin.ts", description: "CLI" },
-  { name: "pika-server", entry: "packages/server/src/bin.ts", description: "server" },
+  { name: "pika", entry: "apps/pika/src/bin.ts", description: "single entrypoint" },
 ];
 
 // Optional native addons are loaded defensively at runtime; keep them out of the bundle.

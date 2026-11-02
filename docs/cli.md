@@ -1,14 +1,43 @@
 # CLI 交互客户端
 
-`pika` 是协议客户端，不在本地运行 agent 循环。所有会话、工具执行、沙箱和审批都在 `pika-server` 侧完成；客户端只负责 slash 命令、模型目录、状态展示和事件渲染。
+`pika` 是唯一入口。默认情况下它先启动一个随自身生命周期存在的本地服务，再启动协议客户端；agent 循环、工具执行、沙箱和审批都在服务端完成，客户端只负责 slash 命令、模型目录、状态展示和事件渲染。
 
 ```bash
-pika [--url ws://127.0.0.1:7331] [--session <id>] [--cwd <path>]
+pika [--url <ws://host:port>] [--session <id>] [--cwd <path>]
+pika --prompt <text> [options]
+pika serve [--port <n>] [--host <addr>] [--dir <path>]
 ```
 
 不带 `--prompt` 时进入 pi-tui 交互界面。`/` 开头触发命令补全，普通文本作为用户消息发送。
 
-## 1. 模型目录
+## 1. 启动与本地服务
+
+默认模式下 `pika` 会重新执行自身进入服务端模式：
+
+1. 生成一个 32 字节的随机 token，只通过 `PIKA_SERVER_TOKEN` 传给它启动的子进程；
+2. 在 `127.0.0.1` 上以 `--port 0` 启动服务，端口由系统分配；
+3. 读取服务端打印的 `pika-server listening on ws://...` 行，解析出实际地址；
+4. 把带 token 的地址作为 `--url` 传给客户端逻辑并进入 TUI 或单次提示模式。
+
+子进程只继承显式的环境变量白名单（`PATH`、`HOME`、`TMPDIR`、locale、代理设置、`NODE_EXTRA_CA_CERTS` 以及 `PIKA_*`），工作目录与父进程一致。token 不会出现在日志或帮助文本中。
+
+退出时父进程终止子进程：先发 `SIGTERM`，宽限期后仍未退出则发 `SIGKILL`；子进程也会在父进程关闭 stdin 时自行退出，因此不会留下监听端口。启动失败（子进程提前退出、输出无法解析、10 秒内未就绪）会以非零码退出，不进入 UI。
+
+`--url` 或非空的 `PIKA_SERVER_URL` 表示远程模式：直接连接已有服务，不启动也不回收任何子进程。此时 token 需要由该服务的运维方自行提供。
+
+`pika serve` 只运行服务端：
+
+| 参数                           | 说明                                                    |
+| ------------------------------ | ------------------------------------------------------- |
+| `--port <n>`                   | 监听端口，`0` 表示系统分配；默认 `PIKA_PORT` 或 `7331`  |
+| `--host <addr>`                | 监听地址，默认 `PIKA_HOST` 或 `127.0.0.1`               |
+| `--dir <path>`                 | 会话目录，默认 `PIKA_SESSION_DIR` 或 `./.pika/sessions` |
+| `--exit-on-parent-stdin-close` | stdin 关闭时退出，供 launcher 使用                      |
+| `-h`, `--help`                 | 打印用法                                                |
+
+启动成功后打印实际监听地址。设置 `PIKA_SERVER_TOKEN` 时，所有 WebSocket 升级都必须携带匹配的 `?token=`，否则在读取任何 JSON-RPC 帧之前返回 401。
+
+## 2. 模型目录
 
 客户端按以下顺序定位目录文件：
 
@@ -55,7 +84,7 @@ pika [--url ws://127.0.0.1:7331] [--session <id>] [--cwd <path>]
 
 `PIKA_MODELS_FILE` 指定的目录与隐式 `env` 预设可以同时存在，`/models` 会把 `env` 排在列表首位。
 
-## 2. 命令
+## 3. 命令
 
 | 命令                                                                      | 说明                                                       |
 | ------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -87,7 +116,7 @@ pika [--url ws://127.0.0.1:7331] [--session <id>] [--cwd <path>]
 
 `/compact`、`/btw`、`/fork`、`/model`、`/handoff` 都要求会话已 settled。`/btw` 的答案以 `[btw]` 标记输出，不改变会话 entry 或用量；手工压缩只在成功时输出 `[compact] <before> -> <after> tokens`，阈值压缩仍由运行时自动触发。
 
-## 3. 界面状态
+## 4. 界面状态
 
 状态行始终显示：
 
@@ -97,6 +126,6 @@ pika [--url ws://127.0.0.1:7331] [--session <id>] [--cwd <path>]
 
 transcript 中会标记 `[tool]`、`[turn <stopReason>]`、`[compact]`、`[approval ...]` 和 `[btw]`。切换会话时 transcript 清空并显示新会话行。
 
-## 4. 范围
+## 5. 范围
 
 本版不提供 TUI 内的目录编辑、`/btw` 流式输出、会话中途热切换模型（切换总是 fork）、外部 handoff/导出、新的密钥存储，以及用户自定义命令。

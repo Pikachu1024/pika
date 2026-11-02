@@ -64,7 +64,7 @@ PIKA_LLM_MODEL, PIKA_LLM_API_KEY, PIKA_LLM_CONTEXT_WINDOW, PIKA_LLM_MAX_TOKENS.
 /** Parses CLI flags, falling back to environment variables for LLM settings. */
 export function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
-    url: process.env.PIKA_SERVER_URL ?? "ws://127.0.0.1:7331",
+    url: envString("PIKA_SERVER_URL") ?? "ws://127.0.0.1:7331",
     cwd: ".",
     help: false,
   };
@@ -439,8 +439,14 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
+export interface ClientRunOptions {
+  /** Called after the TUI stops instead of exiting the process directly. */
+  onExit?: () => void;
+}
+
+/** Runs the client for the given argv; used by the launcher and the dev bin. */
+export async function runClient(argv: string[], runOptions: ClientRunOptions = {}): Promise<void> {
+  const options = parseArgs(argv);
   if (options.help) {
     process.stdout.write(`${usage}\n`);
     return;
@@ -452,11 +458,18 @@ export async function main(): Promise<void> {
     if (options.prompt !== undefined) {
       process.exitCode = await runOneShot(connected, options.prompt);
     } else {
-      await runInteractive(connected);
+      await runInteractive(
+        connected,
+        runOptions.onExit === undefined ? {} : { onExit: runOptions.onExit },
+      );
     }
   } finally {
     connected.client.close();
   }
+}
+
+export async function main(): Promise<void> {
+  await runClient(process.argv.slice(2));
 }
 
 async function loadInitialCatalog(

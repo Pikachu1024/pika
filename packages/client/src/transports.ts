@@ -72,13 +72,29 @@ interface ClientSocketConstructor {
   readonly OPEN: number;
 }
 
+export interface WebSocketClientTransportOptions {
+  /** Appended to the URL as the `token` query parameter for local authentication. */
+  token?: string;
+}
+
+/** Appends the auth token to a WebSocket URL as the `token` query parameter. */
+export function withToken(url: string, token: string): string {
+  const parsed = new URL(url);
+  parsed.searchParams.set("token", token);
+  return parsed.toString();
+}
+
 /** Connects to a WebSocket server using the runtime's global WebSocket client. */
-export function createWebSocketClientTransport(url: string): ProtocolTransport {
+export function createWebSocketClientTransport(
+  url: string,
+  options: WebSocketClientTransportOptions = {},
+): ProtocolTransport {
   const WebSocketCtor = (globalThis as { WebSocket?: ClientSocketConstructor }).WebSocket;
   if (WebSocketCtor === undefined) {
     throw new Error("WebSocket is not available in this runtime");
   }
-  const socket = new WebSocketCtor(url);
+  const target = options.token === undefined ? url : withToken(url, options.token);
+  const socket = new WebSocketCtor(target);
   const handlers = new Set<(message: JsonRpcMessage) => void>();
   const closeHandlers = new Set<() => void>();
   const queued: JsonRpcMessage[] = [];

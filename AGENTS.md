@@ -14,6 +14,7 @@ The OpenSpec change is the source of truth for scope. If code and the change dis
 ## Repository layout
 
 ```
+apps/pika/           single `pika` entrypoint; composition root + local server launcher
 apps/cli/            pi-tui client; protocol-only
 packages/schema/     protocol and event schemas
 packages/core/       runtime, context, prompt, tools, sandbox policy, session ports
@@ -33,7 +34,9 @@ scripts/             repository checks
 - `server` may depend on `schema`, `core`, and `adapters`.
 - `client` may depend only on `schema`.
 - `cli` may depend on `schema` and `client`. It must not import `core`, `server`, or `adapters`.
+- `pika` (`apps/pika`) is the composition root and may import every workspace package. No package may import `pika`.
 - All subprocess execution goes through the sandbox executor. Only `packages/adapters/src/sandbox/` may import `node:child_process`.
+- The launcher supervises its own server process with the global `Bun.spawn`; this is process lifecycle management, not tool execution, and still must not import `node:child_process`.
 - Run `bun run boundary` to verify these rules.
 
 ## Commands
@@ -46,7 +49,9 @@ Use Bun 1.4 or newer (`bun.lock`, Bun workspaces). Install dependencies with `bu
 - `bun run lint`
 - `bun run format`
 - `bun run boundary`
-- `bun run build:binary`: standalone `bun build --compile` binaries
+- `bun run build:binary`: single standalone `pika` binary via `bun build --compile`
+- `bun run cli`: run the single entrypoint (launcher + local server) from source
+- `bun run server`: run `pika serve` from source
 
 Do not run tests against live providers. Use the faux provider for deterministic tests. Live smoke tests are opt-in and require explicit credentials.
 

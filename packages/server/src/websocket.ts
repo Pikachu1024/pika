@@ -1,11 +1,15 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import type { JsonRpcMessage, ProtocolTransport } from "@pika-harness/schema";
+import type { ServerOptions } from "ws";
 import { WebSocket, WebSocketServer } from "ws";
 import { parseError } from "./transports.js";
 
 export interface WebSocketServerOptions {
   port: number;
   host?: string;
+  /** When set, connections must present this token in the `token` query parameter. */
+  token?: string;
   onConnection(transport: ProtocolTransport): void;
 }
 
@@ -77,7 +81,17 @@ export class WebSocketTransport implements ProtocolTransport {
 export async function startWebSocketServer(
   options: WebSocketServerOptions,
 ): Promise<WebSocketServerHandle> {
-  const server = new WebSocketServer({ port: options.port, host: options.host ?? "127.0.0.1" });
+  const host = options.host ?? "127.0.0.1";
+  const serverOptions: ServerOptions = { port: options.port, host };
+  if (options.token !== undefined) {
+    const expected = options.token;
+    serverOptions.verifyClient = (info, done) => {
+      const candidate = readToken(info.req.url);
+      const accepted = candidate !== null && tokenMatches(expected, candidate);
+      done(accepted, accepted ? undefined : 401, accepted ? undefined : "Unauthorized");
+    };
+  }
+  const server = new WebSocketServer(serverOptions);
   await new Promise<void>((resolve, reject) => {
     server.once("listening", resolve);
     server.once("error", reject);
@@ -88,7 +102,6 @@ export async function startWebSocketServer(
   const address = server.address();
   const port =
     typeof address === "object" && address !== null ? (address as AddressInfo).port : options.port;
-  const host = options.host ?? "127.0.0.1";
   return {
     url: `ws://${host}:${port}`,
     close: async () => {
@@ -96,4 +109,19 @@ export async function startWebSocketServer(
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
   };
+}
+
+function readToken(rawUrl: string | undefined): string | null {
+  if (rawUrl === undefined) return null;
+  try {
+    return new URL(rawUrl, "ws://127.0.0.1").searchParams.get("token");
+  } catch {
+    return null;
+  }
+}
+
+function tokenMatches(expected: string, candidate: string): boolean {
+  const expectedDigest = createHash("sha256").update(expected).digest();
+  const candidateDigest = createHash("sha256").update(candidate).digest();
+  return timingSafeEqual(expectedDigest, candidateDigest);
 }

@@ -1,4 +1,7 @@
 // Public entry point for the session server, transports, and approval routing.
+
+export type { RunningServe, ServeLlmOptions, ServeOptions } from "./serve.js";
+export { parseServeArgs, serveMain, serveUsage, startServe } from "./serve.js";
 export type {
   CompactionFactory,
   ServerSandboxOptions,

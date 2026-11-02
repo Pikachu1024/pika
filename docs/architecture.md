@@ -110,6 +110,17 @@ Provider adapter -> 模型线格式
 
 provider 凭据只保留在 harness 进程内，不传给工具子进程。子进程环境由策略显式构造，不能继承 `process.env`；不加载登录 shell 的启动文件；超时或中断时终止整个进程组。
 
+### 5.5 本地服务生命周期
+
+`pika` 默认自行拉起本地会话服务，用户只需要一个命令。服务只监听 `127.0.0.1` 的临时端口；launcher 每次运行生成一次性 token，通过子进程环境 `PIKA_SERVER_TOKEN` 传给服务端，并在客户端连接时作为 `?token=` 查询参数携带。服务端在 WebSocket 升级阶段用常量时间比较校验 token，缺少或错误时返回 401，连接不会进入 JSON-RPC 层。token 不写入日志、会话记录或终端输出。
+
+服务模式与回收约定：
+
+- `pika serve [--port <n>] [--host <addr>] [--dir <path>]` 独立运行服务，沿用 `PIKA_PORT`、`PIKA_HOST`、`PIKA_SESSION_DIR`，启动后打印 `pika-server listening on ws://...`。
+- `--exit-on-parent-stdin-close` 由 launcher 使用：父进程 stdin 关闭即停止监听并退出，避免客户端异常死亡后留下孤儿进程。
+- `pika --url <ws://...>` 或 `PIKA_SERVER_URL` 进入远程模式，不启动本地服务。
+- launcher 只向本地服务子进程传递显式环境白名单（`PIKA_*`、`HOME`、`PATH`、`TMPDIR`、语言与代理变量），不继承完整 `process.env`。
+
 ## 6. 强制检查
 
 `bun run boundary` 运行 `scripts/check-boundaries.mjs`，扫描 `packages/*/src` 与 `apps/*/src`，检查：

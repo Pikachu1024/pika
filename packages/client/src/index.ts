@@ -5,5 +5,9 @@ export type {
   StartSessionInput,
 } from "./client.js";
 export { PikaClient, PikaProtocolError } from "./client.js";
-export type { StdioClientTransportOptions } from "./transports.js";
-export { createStdioClientTransport, createWebSocketClientTransport } from "./transports.js";
+export type { StdioClientTransportOptions, WebSocketClientTransportOptions } from "./transports.js";
+export {
+  createStdioClientTransport,
+  createWebSocketClientTransport,
+  withToken,
+} from "./transports.js";

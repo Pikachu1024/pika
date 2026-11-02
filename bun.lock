@@ -10,6 +10,7 @@
         "@pika-harness/cli": "workspace:*",
         "@pika-harness/client": "workspace:*",
         "@pika-harness/core": "workspace:*",
+        "@pika-harness/pika": "workspace:*",
         "@pika-harness/schema": "workspace:*",
         "@pika-harness/server": "workspace:*",
         "@types/bun": "1.4.4",
@@ -21,13 +22,22 @@
     "apps/cli": {
       "name": "@pika-harness/cli",
       "version": "0.0.0",
-      "bin": {
-        "pika": "./dist/bin.js",
-      },
       "dependencies": {
         "@mariozechner/pi-tui": "0.73.1",
         "@pika-harness/client": "workspace:*",
         "@pika-harness/schema": "workspace:*",
+      },
+    },
+    "apps/pika": {
+      "name": "@pika-harness/pika",
+      "version": "0.0.0",
+      "bin": {
+        "pika": "./dist/bin.js",
+      },
+      "dependencies": {
+        "@pika-harness/cli": "workspace:*",
+        "@pika-harness/client": "workspace:*",
+        "@pika-harness/server": "workspace:*",
       },
     },
     "packages/adapters": {
@@ -67,9 +77,6 @@
     "packages/server": {
       "name": "@pika-harness/server",
       "version": "0.0.0",
-      "bin": {
-        "pika-server": "./dist/bin.js",
-      },
       "dependencies": {
         "@pika-harness/adapters": "workspace:*",
         "@pika-harness/core": "workspace:*",
@@ -174,6 +181,8 @@
     "@pika-harness/client": ["@pika-harness/client@workspace:packages/client"],
 
     "@pika-harness/core": ["@pika-harness/core@workspace:packages/core"],
+
+    "@pika-harness/pika": ["@pika-harness/pika@workspace:apps/pika"],
 
     "@pika-harness/schema": ["@pika-harness/schema@workspace:packages/schema"],
 
