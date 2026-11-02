@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { ExecResult, Executor, PathPolicy } from "../../sandbox.js";
 import type { Tool, ToolContext, ToolOutput } from "../../tools.js";
 import { errorOutput, toToolError } from "../file/common.js";
-import { errorMessage, execOutput } from "./exec-output.js";
+import { errorMessage, execOutput, recordExecDenial } from "./exec-output.js";
 
 export const GlobArgsSchema = z.object({
   pattern: z.string().min(1),
@@ -38,6 +38,7 @@ export function createGlobTool(options: GlobToolOptions): Tool {
       const usesPath = args.pattern.includes("/");
       const matchArgs = usesPath ? ["-path", `*/${args.pattern}`] : ["-name", args.pattern];
 
+      const policy = context.sandboxPolicy ?? options.policy;
       try {
         const result = await options.executor.exec(
           {
@@ -47,10 +48,11 @@ export function createGlobTool(options: GlobToolOptions): Tool {
             signal: context.signal,
             onOutput: context.onUpdate,
           },
-          options.policy,
+          policy,
         );
+        await recordExecDenial(context, options.executor.backend, policy, result);
         return execOutput(sortLines(result), {
-          policy: options.policy,
+          policy,
           emptyMessage: "no files matched",
         });
       } catch (error) {

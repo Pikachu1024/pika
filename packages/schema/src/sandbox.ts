@@ -13,6 +13,8 @@ const DEFAULT_ENV_ALLOWLIST = ["PATH", "HOME", "LANG", "TERM"];
 
 export const SandboxPolicySchema = z.object({
   mode: SandboxModeSchema,
+  /** Canonical workspace root; read-only policies still allow reads beneath it. */
+  workspaceRoot: z.string().default(""),
   writableRoots: z.array(z.string().min(1)).default([]),
   deniedReads: z.array(z.string().min(1)).default([]),
   network: NetworkPolicySchema.default("none"),

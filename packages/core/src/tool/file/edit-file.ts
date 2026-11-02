@@ -29,11 +29,16 @@ export function createEditFileTool(options: EditFileToolOptions): Tool {
     description:
       "Replace an exact text fragment in a workspace file. oldText must match exactly once unless replaceAll is true.",
     schema: EditFileArgsSchema,
+    sandbox: { write: true, arbitraryProcess: false },
     concurrencyKey: writeConcurrencyKey,
-    async execute(_context: ToolContext, rawArgs: unknown): Promise<ToolOutput> {
+    async execute(context: ToolContext, rawArgs: unknown): Promise<ToolOutput> {
       const args = rawArgs as EditFileArgs;
       try {
-        const resolved = await options.pathPolicy.resolve(args.path, "write");
+        const resolved = await options.pathPolicy.resolve(
+          args.path,
+          "write",
+          context.sandboxPolicy,
+        );
         const handle = await open(resolved, "r");
         let original: string;
         try {

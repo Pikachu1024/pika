@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Executor, PathPolicy } from "../../sandbox.js";
 import type { Tool, ToolContext, ToolOutput } from "../../tools.js";
 import { errorOutput, toToolError } from "../file/common.js";
-import { errorMessage, execOutput } from "./exec-output.js";
+import { errorMessage, execOutput, recordExecDenial } from "./exec-output.js";
 
 export const GrepArgsSchema = z.object({
   pattern: z.string().min(1),
@@ -42,6 +42,7 @@ export function createGrepTool(options: GrepToolOptions): Tool {
       if (args.glob !== undefined) argv.push(`--include=${args.glob}`);
       argv.push("-e", args.pattern, "--", target);
 
+      const policy = context.sandboxPolicy ?? options.policy;
       try {
         const result = await options.executor.exec(
           {
@@ -51,11 +52,12 @@ export function createGrepTool(options: GrepToolOptions): Tool {
             signal: context.signal,
             onOutput: context.onUpdate,
           },
-          options.policy,
+          policy,
         );
+        await recordExecDenial(context, options.executor.backend, policy, result);
         // grep uses exit code 1 for "no matches", which is not a failure.
         return execOutput(result, {
-          policy: options.policy,
+          policy,
           successExitCodes: [0, 1],
           emptyMessage: "no matches",
         });

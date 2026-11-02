@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import type { ExecRequest, ExecResult, Executor, SandboxCapabilities } from "@pika-harness/core";
-import type { SandboxPolicy } from "@pika-harness/schema";
+import type { SandboxBackend, SandboxPolicy } from "@pika-harness/schema";
 
 const DEFAULT_KILL_GRACE_MS = 2_000;
 
@@ -21,7 +21,7 @@ export interface NodeProcessExecutorOptions {
 
 /** Spawns processes with a constructed environment; it provides no OS-level isolation. */
 export class NodeProcessExecutor implements Executor {
-  readonly backend = "none";
+  readonly backend: SandboxBackend = "none";
   readonly #sourceEnv: NodeJS.ProcessEnv;
   readonly #deniedEnvNames: readonly string[];
   readonly #killGraceMs: number;

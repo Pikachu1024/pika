@@ -10,7 +10,10 @@
     "turnId": "turn_1",
     "type": "turn_start",
     "turnNumber": 1,
-    "input": { "role": "user", "text": "first" }
+    "input": {
+      "role": "user",
+      "text": "first"
+    }
   },
   {
     "sessionId": "session_test",
@@ -19,7 +22,24 @@
     "type": "user_message",
     "messageId": "msg_2",
     "delivery": "prompt",
-    "message": { "role": "user", "text": "first" }
+    "message": {
+      "role": "user",
+      "text": "first"
+    }
+  },
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "turnId": "turn_1",
+    "type": "context_projected",
+    "promptHash": "4491d0a148a909982e90d075b8e05015672eea7d34def55b64bd45ab7991795f",
+    "system": "",
+    "sections": [],
+    "toolsAdded": [],
+    "toolsRemoved": [],
+    "tools": [],
+    "messageCount": 1,
+    "estimatedTokens": 2
   },
   {
     "sessionId": "session_test",
@@ -35,14 +55,10 @@
     "turnId": "turn_1",
     "type": "message_delta",
     "messageId": "msg_3",
-    "delta": { "kind": "text", "text": "partial" }
-  },
-  {
-    "sessionId": "session_test",
-    "timestamp": "2026-01-01T00:00:00.000Z",
-    "turnId": "turn_1",
-    "type": "error",
-    "error": { "code": "provider_down", "message": "boom", "retryable": false }
+    "delta": {
+      "kind": "text",
+      "text": "partial"
+    }
   },
   {
     "sessionId": "session_test",
@@ -51,6 +67,17 @@
     "type": "message_end",
     "messageId": "msg_3",
     "stopReason": "error"
+  },
+  {
+    "sessionId": "session_test",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "turnId": "turn_1",
+    "type": "error",
+    "error": {
+      "code": "provider_down",
+      "message": "boom",
+      "retryable": false
+    }
   },
   {
     "sessionId": "session_test",

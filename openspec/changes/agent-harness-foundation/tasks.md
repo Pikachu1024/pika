@@ -10,34 +10,34 @@
 
 - [x] 2.1 Implement the `Provider` interface, `LlmEvent` normalization, and a faux provider with scripted streams; verify deterministic streaming tests cover text, reasoning, tool-call chunks, usage, and errors.
 - [x] 2.2 Implement a `pi-ai` adapter for one OpenAI-compatible endpoint; verify adapter tests with a mocked transport and document an optional live smoke test.
-- [ ] 2.3 Implement the single-writer runtime state machine and serialized command queue; verify transition tests cover idle, streaming, tool-calling, compacting, and aborted states.
+- [x] 2.3 Implement the single-writer runtime state machine and serialized command queue; verify transition tests cover idle, streaming, tool-calling, compacting, and aborted states.
 - [x] 2.4 Implement the turn loop with lifecycle events, steering, follow-up, interrupt, and settled; verify event-order tests for a tool turn, a steered turn, a queued follow-up, and an interrupt.
 - [x] 2.5 Implement error normalization so provider and tool failures become events or tool results, document the event contract in `docs/events.md`, and add fixtures; verify a failed request leaves the session idle, a later prompt succeeds, and fixtures match emitted events.
 
 ## 3. Session store and replay
 
 - [x] 3.1 Implement the append-only JSONL store with `id`/`parentId` tree entries and an in-memory implementation of the same interface; verify both pass the same contract test suite.
-- [ ] 3.2 Implement timeline folding and deterministic projection from an active branch; verify replay of a recorded turn produces the recorded prompt hash.
-- [ ] 3.3 Implement resume, fork at a chosen entry, session listing, and the SQLite index for listing, token totals, and search; verify fork leaves the original branch unchanged, resume continues from the last settled state, and deleting then rebuilding the index yields identical results.
-- [ ] 3.4 Implement raw provider payload capture in a sidecar directory and document the session format in `docs/session-format.md` with a sample log; verify replay succeeds after the sidecar is removed and the sample replays with its recorded hash.
+- [x] 3.2 Implement timeline folding and deterministic projection from an active branch; verify replay of a recorded turn produces the recorded prompt hash.
+- [x] 3.3 Implement resume, fork at a chosen entry, session listing, and the SQLite index for listing, token totals, and search; verify fork leaves the original branch unchanged, resume continues from the last settled state, and deleting then rebuilding the index yields identical results.
+- [x] 3.4 Implement raw provider payload capture in a sidecar directory and document the session format in `docs/session-format.md` with a sample log; verify replay succeeds after the sidecar is removed and the sample replays with its recorded hash.
 
 ## 4. Context pipeline and prompt
 
-- [ ] 4.1 Implement the sectioned system prompt builder with named sections, `toolsAdded`/`toolsRemoved`, and `AGENTS.md` discovery with root-to-leaf merging; verify snapshot tests, resume reconstruction, nested-directory ordering, and a missing-file case.
-- [ ] 4.2 Implement the projection pipeline with compaction application, reminder injection, tool-pair repair, provider-specific conversion, token estimation, and cache usage recording; verify orphan-call, purity, estimator, and `cache_read`/`cache_write` tests.
-- [ ] 4.3 Implement compaction policy with threshold, reserve, branch summarization, and overflow retry; verify each path records a compaction event with before and after token counts.
-- [ ] 4.4 Document prompt sections, projection, cache rules, and compaction in `docs/context.md`; verify the documented examples match test fixtures.
+- [x] 4.1 Implement the sectioned system prompt builder with named sections, `toolsAdded`/`toolsRemoved`, and `AGENTS.md` discovery with root-to-leaf merging; verify snapshot tests, resume reconstruction, nested-directory ordering, and a missing-file case.
+- [x] 4.2 Implement the projection pipeline with compaction application, reminder injection, tool-pair repair, provider-specific conversion, token estimation, and cache usage recording; verify orphan-call, purity, estimator, and `cache_read`/`cache_write` tests.
+- [x] 4.3 Implement compaction policy with threshold, reserve, branch summarization, and overflow retry; verify each path records a compaction event with before and after token counts.
+- [x] 4.4 Document prompt sections, projection, cache rules, and compaction in `docs/context.md`; verify the documented examples match test fixtures.
 
 ## 5. Sandbox
 
 - [x] 5.1 Define `SandboxPolicy`, `Executor`, `NoopExecutor`, and `PathPolicy`; verify policy resolution and path tests cover read-only, workspace-write, outside-workspace writes, `..` traversal, and symlink escapes.
 - [x] 5.2 Implement child process construction with an explicit environment allowlist, no login shell, a detached process group, timeout, and output cap; verify environment scrubbing, startup-file isolation, and orphan cleanup tests.
-- [ ] 5.3 Implement sandbox decision events and the audit trail; verify decisions appear in the session log and in replay with the same outcome and reason.
-- [ ] 5.4 Implement approval integration and the escalation flow; verify deny, accept-for-session, decline, and retry paths.
-- [ ] 5.5 Implement the macOS Seatbelt executor with generated profiles; verify the conformance suite for filesystem, environment, child-process inheritance, and orphan cleanup on macOS.
+- [x] 5.3 Implement sandbox decision events and the audit trail; verify decisions appear in the session log and in replay with the same outcome and reason.
+- [x] 5.4 Implement approval integration and the escalation flow; verify deny, accept-for-session, decline, and retry paths.
+- [x] 5.5 Implement the macOS Seatbelt executor with generated profiles; verify the conformance suite for filesystem, environment, child-process inheritance, and orphan cleanup on macOS.
 - [ ] 5.6 Implement the bubblewrap executor and a Docker executor; verify the same conformance suite in Linux CI and Docker.
-- [ ] 5.7 Implement network `none` enforcement, the proxy-mode interface, and policy monotonicity for child tasks; verify denied connections are recorded, an allowlisted proxy path succeeds, and a read-only parent rejects or clamps a workspace-write child request.
-- [ ] 5.8 Document the sandbox threat model, policy model, backend matrix, and escalation flow in `docs/sandbox.md`; verify the documented commands match the conformance suite.
+- [x] 5.7 Implement network `none` enforcement, the proxy-mode interface, and policy monotonicity for child tasks; verify denied connections are recorded, an allowlisted proxy path succeeds, and a read-only parent rejects or clamps a workspace-write child request.
+- [x] 5.8 Document the sandbox threat model, policy model, backend matrix, and escalation flow in `docs/sandbox.md`; verify the documented commands match the conformance suite.
 
 ## 6. Tool system
 

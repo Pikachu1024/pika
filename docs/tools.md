@@ -51,14 +51,14 @@ const executor = new ToolBatchExecutor(registry, {
 
 ## 3. v0 工具集
 
-| 工具 | 参数 | 强制执行点 |
-| --- | --- | --- |
-| `read_file` | `path`、`offset?`、`limit?`（行号从 1 开始） | `PathPolicy` 读取 |
-| `write_file` | `path`、`content` | `PathPolicy` 写入 |
-| `edit_file` | `path`、`oldText`、`newText`、`replaceAll?` | `PathPolicy` 写入 |
-| `bash` | `command`、`timeoutMs?`（会被策略收紧） | sandbox `Executor` |
-| `grep` | `pattern`、`path?`、`glob?`、`ignoreCase?` | 先过路径检查，再由 `Executor` 执行 |
-| `glob` | `pattern`、`path?` | 先过路径检查，再由 `Executor` 执行 |
+| 工具         | 参数                                         | 强制执行点                         |
+| ------------ | -------------------------------------------- | ---------------------------------- |
+| `read_file`  | `path`、`offset?`、`limit?`（行号从 1 开始） | `PathPolicy` 读取                  |
+| `write_file` | `path`、`content`                            | `PathPolicy` 写入                  |
+| `edit_file`  | `path`、`oldText`、`newText`、`replaceAll?`  | `PathPolicy` 写入                  |
+| `bash`       | `command`、`timeoutMs?`（会被策略收紧）      | sandbox `Executor`                 |
+| `grep`       | `pattern`、`path?`、`glob?`、`ignoreCase?`   | 先过路径检查，再由 `Executor` 执行 |
+| `glob`       | `pattern`、`path?`                           | 先过路径检查，再由 `Executor` 执行 |
 
 文件工具在授权前解析符号链接，因此指向工作区外的链接返回 `symlink-escape`，不会触碰目标文件。shell 与搜索工具不自行 spawn 进程，而是构造 `ExecRequest` 交给执行器；执行器构造白名单环境，并且不加载登录 shell 启动文件。
 

@@ -1,6 +1,6 @@
-import type { SandboxPolicy } from "@pika-harness/schema";
+import type { SandboxBackend, SandboxPolicy } from "@pika-harness/schema";
 import type { ExecResult } from "../../sandbox.js";
-import type { ToolOutput } from "../../tools.js";
+import type { ToolContext, ToolOutput } from "../../tools.js";
 
 export interface ExecOutputOptions {
   policy: SandboxPolicy;
@@ -50,4 +50,23 @@ export function execOutput(result: ExecResult, options: ExecOutputOptions): Tool
 export function errorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message === "" ? "unknown execution error" : message;
+}
+
+/** Records a backend-classified denial for the audit trail. */
+export async function recordExecDenial(
+  context: ToolContext,
+  backend: SandboxBackend,
+  policy: SandboxPolicy,
+  result: ExecResult,
+): Promise<void> {
+  if (result.denied === undefined) {
+    return;
+  }
+  await context.recordSandboxDecision?.({
+    toolCallId: context.toolCallId,
+    backend,
+    mode: policy.mode,
+    outcome: "deny",
+    reason: result.denied.reason,
+  });
 }

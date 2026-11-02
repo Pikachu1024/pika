@@ -31,3 +31,12 @@ jobs:
       - run: pnpm lint
       - run: pnpm boundary
       - run: pnpm test
+      - name: Install sandbox backends
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          # Ubuntu 24.04 blocks unprivileged user namespaces through AppArmor.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          docker pull debian:bookworm-slim
+      - name: Sandbox conformance
+        run: pnpm test:sandbox

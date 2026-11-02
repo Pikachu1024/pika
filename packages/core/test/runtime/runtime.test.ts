@@ -30,6 +30,10 @@ function eventsOfType<T extends AgentEvent["type"]>(
   return events.filter((event): event is EventOfType<T> => event.type === type);
 }
 
+function typesWithoutContext(events: AgentEvent[]): AgentEvent["type"][] {
+  return events.filter((event) => event.type !== "context_projected").map((event) => event.type);
+}
+
 function commonOptions(provider: Provider) {
   return {
     sessionId: "session_test",
@@ -160,7 +164,7 @@ describe("runtime turn loop", () => {
     await runtime.prompt("read a.txt");
     await runtime.settled();
 
-    expect(sink.events.map((event) => event.type)).toEqual([
+    expect(typesWithoutContext(sink.events)).toEqual([
       "agent_start",
       "turn_start",
       "user_message",
@@ -269,7 +273,7 @@ describe("runtime turn loop", () => {
     provider.releaseFirstStep.resolve();
     await runtime.settled();
 
-    expect(sink.events.map((event) => event.type)).toEqual([
+    expect(typesWithoutContext(sink.events)).toEqual([
       "agent_start",
       "turn_start",
       "user_message",
@@ -319,7 +323,7 @@ describe("runtime turn loop", () => {
       "steer",
     ]);
     expect(provider.requests).toHaveLength(2);
-    expect(sink.events.map((event) => event.type)).toEqual([
+    expect(typesWithoutContext(sink.events)).toEqual([
       "agent_start",
       "turn_start",
       "user_message",
@@ -353,7 +357,7 @@ describe("runtime turn loop", () => {
     void runtime.followUp("second");
     await runtime.settled();
 
-    expect(sink.events.map((event) => event.type)).toEqual([
+    expect(typesWithoutContext(sink.events)).toEqual([
       "agent_start",
       "turn_start",
       "user_message",
@@ -417,7 +421,7 @@ describe("runtime turn loop", () => {
     await runtime.interrupt("user cancel");
     await runtime.settled();
 
-    expect(events.map((event) => event.type)).toEqual([
+    expect(typesWithoutContext(events)).toEqual([
       "agent_start",
       "turn_start",
       "user_message",
@@ -472,14 +476,14 @@ describe("runtime turn loop", () => {
     await runtime.prompt("first");
     await runtime.settled();
 
-    expect(sink.events.map((event) => event.type)).toEqual([
+    expect(typesWithoutContext(sink.events)).toEqual([
       "agent_start",
       "turn_start",
       "user_message",
       "message_start",
       "message_delta",
-      "error",
       "message_end",
+      "error",
       "turn_end",
       "agent_end",
       "settled",

@@ -19,6 +19,8 @@ export interface ExecResult {
   timedOut: boolean;
   truncated: boolean;
   fullOutputRef?: string;
+  /** Set when the backend classified the failure as a sandbox denial. */
+  denied?: { reason: string };
 }
 
 export interface SandboxCapabilities {
@@ -39,5 +41,25 @@ export type PathOperation = "read" | "write";
 
 /** Resolves a requested path and rejects it when the operation is outside the policy. */
 export interface PathPolicy {
-  resolve(requestedPath: string, operation: PathOperation): Promise<string>;
+  /**
+   * `policy` overrides the policy supplied at construction, so a session-scoped
+   * escalation applies to in-process file tools without rebuilding them.
+   */
+  resolve(requestedPath: string, operation: PathOperation, policy?: SandboxPolicy): Promise<string>;
+}
+
+/** One outbound destination observed by a sandbox proxy. */
+export interface NetworkProxyRecord {
+  host: string;
+  port: number;
+  allowed: boolean;
+  reason: string;
+  timestamp: string;
+}
+
+/** Local allowlist proxy used by `network: "proxy"` policies. */
+export interface NetworkProxy {
+  readonly url: string;
+  records(): NetworkProxyRecord[];
+  close(): Promise<void>;
 }

@@ -48,14 +48,12 @@ function buildSections(input: SystemPromptInput): PromptSection[] {
   return sections;
 }
 
-function renderDocument(document: SystemPromptDocument): string {
-  if (document.sections.length === 0) {
+/** Renders recorded sections back into the system prompt text. */
+export function renderPromptSections(sections: PromptSection[]): string {
+  if (sections.length === 0) {
     return "";
   }
-
-  const body = document.sections
-    .map((section) => `## ${section.name}\n${section.content}`)
-    .join("\n\n");
+  const body = sections.map((section) => `## ${section.name}\n${section.content}`).join("\n\n");
   return `${body}\n`;
 }
 
@@ -70,7 +68,7 @@ export function createPromptBuilder(): PromptBuilder {
       };
     },
     render(document: SystemPromptDocument): string {
-      return renderDocument(document);
+      return renderPromptSections(document.sections);
     },
   };
 }

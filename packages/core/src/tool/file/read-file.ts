@@ -28,10 +28,10 @@ export function createReadFileTool(options: ReadFileToolOptions): Tool {
     description:
       "Read a UTF-8 text file inside the workspace. Use offset and limit to select a line range.",
     schema: ReadFileArgsSchema,
-    async execute(_context: ToolContext, rawArgs: unknown): Promise<ToolOutput> {
+    async execute(context: ToolContext, rawArgs: unknown): Promise<ToolOutput> {
       const args = rawArgs as ReadFileArgs;
       try {
-        const resolved = await options.pathPolicy.resolve(args.path, "read");
+        const resolved = await options.pathPolicy.resolve(args.path, "read", context.sandboxPolicy);
         const handle = await open(resolved, "r");
         try {
           const stat = await handle.stat();

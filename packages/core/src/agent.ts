@@ -1,16 +1,52 @@
+import type {
+  ApprovalDecision,
+  ApprovalRequest,
+  SandboxBackend,
+  SandboxPolicy,
+} from "@pika-harness/schema";
 import type { Clock, IdGenerator } from "./clock.js";
+import type { PromptSection } from "./context.js";
 import type { EventSink } from "./events.js";
-import type { Provider, ProviderTool } from "./provider.js";
+import type { LlmMessage, Provider, ProviderTool } from "./provider.js";
+import type { ApprovalMode } from "./sandbox/decisions.js";
 import type { SessionStore } from "./session-store.js";
 import type { ToolExecutor } from "./tools.js";
 
 export type AgentState = "idle" | "streaming" | "tool-calling" | "compacting" | "aborted";
+
+export interface RuntimeHistoryEntry {
+  message: LlmMessage;
+  entryId?: string;
+}
+
+export interface RuntimeCompactionOptions {
+  contextWindow: number;
+  reserveTokens: number;
+  keepRecentTurns: number;
+  summarize(messages: LlmMessage[]): string | Promise<string>;
+}
+
+/** Resolves a sandbox escalation prompt. Returning deny keeps the original policy. */
+export type ApprovalHandler = (
+  request: ApprovalRequest,
+) => ApprovalDecision | Promise<ApprovalDecision>;
+
+export interface RuntimeSandboxOptions {
+  backend: SandboxBackend;
+  policy: SandboxPolicy;
+  /** `on-request` prompts only on denial; `untrusted` also gates writes and shells. */
+  approvalMode?: ApprovalMode;
+  approve?: ApprovalHandler;
+}
 
 export interface RuntimeOptions {
   sessionId: string;
   model: string;
   provider: Provider;
   systemPrompt?: string;
+  promptSections?: PromptSection[];
+  toolsAdded?: string[];
+  toolsRemoved?: string[];
   tools?: ProviderTool[];
   toolExecutor?: ToolExecutor;
   eventSink: EventSink;
@@ -18,6 +54,9 @@ export interface RuntimeOptions {
   clock?: Clock;
   ids?: IdGenerator;
   maxModelCallsPerTurn?: number;
+  initialHistory?: RuntimeHistoryEntry[];
+  compaction?: RuntimeCompactionOptions;
+  sandbox?: RuntimeSandboxOptions;
 }
 
 /** Single-writer runtime facade. Callers enqueue commands; state leaves only as events. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createPromptBuilder } from "../../src/context/prompt-builder.js";
+import { createPromptBuilder, renderPromptSections } from "../../src/context/prompt-builder.js";
 
 describe("createPromptBuilder", () => {
   it("emits sections in the fixed order", () => {
@@ -105,5 +105,20 @@ describe("createPromptBuilder", () => {
 
     expect(first).toBe(second);
     expect(first).toBe(`${expected}\n`);
+  });
+
+  it("rebuilds the recorded system prompt from persisted sections", () => {
+    const builder = createPromptBuilder();
+    const document = builder.build({
+      identity: "You are Pika.",
+      projectInstructions: ["Root rule."],
+      toolGuidance: "Prefer tools.",
+    });
+    const system = builder.render(document);
+
+    // context_projected records sections; resume must reproduce the system prompt exactly.
+    const restored = renderPromptSections(document.sections.map((section) => ({ ...section })));
+
+    expect(restored).toBe(system);
   });
 });

@@ -22,11 +22,16 @@ export function createWriteFileTool(options: WriteFileToolOptions): Tool {
     name: "write_file",
     description: "Create or replace a UTF-8 text file inside the workspace.",
     schema: WriteFileArgsSchema,
+    sandbox: { write: true, arbitraryProcess: false },
     concurrencyKey: writeConcurrencyKey,
-    async execute(_context: ToolContext, rawArgs: unknown): Promise<ToolOutput> {
+    async execute(context: ToolContext, rawArgs: unknown): Promise<ToolOutput> {
       const args = rawArgs as WriteFileArgs;
       try {
-        const resolved = await options.pathPolicy.resolve(args.path, "write");
+        const resolved = await options.pathPolicy.resolve(
+          args.path,
+          "write",
+          context.sandboxPolicy,
+        );
         await mkdir(path.dirname(resolved), { recursive: true });
         await writeFile(resolved, args.content, "utf8");
         const bytes = Buffer.byteLength(args.content, "utf8");

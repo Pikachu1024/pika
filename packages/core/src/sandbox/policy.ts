@@ -48,6 +48,7 @@ export function resolveSandboxPolicy(input: ResolveSandboxPolicyInput): SandboxP
   );
   const policy: SandboxPolicy = {
     mode: input.mode,
+    workspaceRoot,
     writableRoots: resolveWritableRoots(input.mode, workspaceRoot, requestedWritableRoots),
     deniedReads: dedupe((input.deniedReads ?? []).map((root) => path.resolve(workspaceRoot, root))),
     network: input.network ?? "none",
@@ -77,6 +78,7 @@ export function clampSandboxPolicy(
   }
   const policy: SandboxPolicy = {
     mode,
+    workspaceRoot: parent.workspaceRoot,
     writableRoots: clampWritableRoots(parent, requested.writableRoots, mode, violations),
     deniedReads: mergeDeniedReads(parent.deniedReads, requested.deniedReads, violations),
     network: clampNetwork(parent.network, requested.network, violations),

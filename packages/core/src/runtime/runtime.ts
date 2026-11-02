@@ -1,21 +1,39 @@
 import type {
   AgentEvent,
+  ApprovalDecision,
+  ApprovalRequest,
   ContentPart,
   Delivery,
   MessageDelta,
   NormalizedError,
+  SandboxDecision,
+  SandboxPolicy,
   StopReason,
   ToolCall,
   ToolResult,
   Usage,
 } from "@pika-harness/schema";
-import type { AgentRuntime, AgentState, RuntimeOptions } from "../agent.js";
+import type {
+  AgentRuntime,
+  AgentState,
+  RuntimeCompactionOptions,
+  RuntimeOptions,
+  RuntimeSandboxOptions,
+} from "../agent.js";
 import type { Clock, IdGenerator } from "../clock.js";
 import { createIdGenerator, systemClock } from "../clock.js";
+import { hashPrompt } from "../context/hash.js";
+import { estimateMessages } from "../context/token-estimator.js";
+import type { PromptSection } from "../context.js";
 import type { EventSink } from "../events.js";
 import type { LlmEvent, LlmMessage, LlmRequest, Provider, ProviderTool } from "../provider.js";
 import type { SessionStore } from "../session-store.js";
-import type { ToolBatchContext, ToolExecutor } from "../tools.js";
+import type {
+  ApprovalRequestInput,
+  SandboxState,
+  ToolBatchContext,
+  ToolExecutor,
+} from "../tools.js";
 
 type ToolCallDelta = Extract<LlmEvent, { type: "tool_call_delta" }>;
 
@@ -42,9 +60,13 @@ interface ModelStepSuccess {
   usage: Usage | undefined;
   message: LlmMessage | undefined;
   messageId: string;
+  messageEntryId: string | undefined;
 }
 
-type ModelStepResult = ModelStepSuccess | { kind: "error" } | { kind: "aborted" };
+type ModelStepResult =
+  | ModelStepSuccess
+  | { kind: "error"; error: NormalizedError; messageStarted: boolean }
+  | { kind: "aborted" };
 
 const defaultMaxModelCallsPerTurn = 16;
 
@@ -53,6 +75,9 @@ class SingleWriterRuntime implements AgentRuntime {
   readonly #model: string;
   readonly #provider: Provider;
   readonly #systemPrompt: string;
+  readonly #promptSections: PromptSection[];
+  readonly #toolsAdded: string[];
+  readonly #toolsRemoved: string[];
   readonly #tools: ProviderTool[];
   readonly #toolExecutor: ToolExecutor | undefined;
   readonly #eventSink: EventSink;
@@ -60,9 +85,14 @@ class SingleWriterRuntime implements AgentRuntime {
   readonly #clock: Clock;
   readonly #ids: IdGenerator;
   readonly #maxModelCallsPerTurn: number;
+  readonly #compaction: RuntimeCompactionOptions | undefined;
+  readonly #sandbox: RuntimeSandboxOptions | undefined;
+
+  #sandboxPolicy: SandboxPolicy | undefined;
 
   #currentState: AgentState = "idle";
   #history: LlmMessage[] = [];
+  #historyEntryIds: Array<string | undefined> = [];
   #promptQueue: string[] = [];
   #steerQueue: string[] = [];
   #followUpQueue: string[] = [];
@@ -81,6 +111,9 @@ class SingleWriterRuntime implements AgentRuntime {
     this.#model = options.model;
     this.#provider = options.provider;
     this.#systemPrompt = options.systemPrompt ?? "";
+    this.#promptSections = [...(options.promptSections ?? [])];
+    this.#toolsAdded = [...(options.toolsAdded ?? [])];
+    this.#toolsRemoved = [...(options.toolsRemoved ?? [])];
     this.#tools = [...(options.tools ?? [])];
     this.#toolExecutor = options.toolExecutor;
     this.#eventSink = options.eventSink;
@@ -88,6 +121,13 @@ class SingleWriterRuntime implements AgentRuntime {
     this.#clock = options.clock ?? systemClock;
     this.#ids = options.ids ?? createIdGenerator();
     this.#maxModelCallsPerTurn = options.maxModelCallsPerTurn ?? defaultMaxModelCallsPerTurn;
+    this.#compaction = options.compaction;
+    this.#sandbox = options.sandbox;
+    this.#sandboxPolicy = options.sandbox?.policy;
+    if (options.initialHistory !== undefined) {
+      this.#history = options.initialHistory.map((entry) => entry.message);
+      this.#historyEntryIds = options.initialHistory.map((entry) => entry.entryId);
+    }
   }
 
   get state(): AgentState {
@@ -232,12 +272,14 @@ class SingleWriterRuntime implements AgentRuntime {
     const turn: ActiveTurn = { id: this.#ids.next("turn"), number: ++this.#turnCounter };
     this.#activeTurn = turn;
     await this.#emitTurnStart(turn, input);
-    await this.#emitUserMessage(turn, input.text, input.delivery);
+    const userEntryId = await this.#emitUserMessage(turn, input.text, input.delivery);
     this.#history.push({ role: "user", content: [{ type: "text", text: input.text }] });
+    this.#historyEntryIds.push(userEntryId);
 
     let stopReason: StopReason = "end";
     let turnUsage: Usage | undefined;
     let modelCalls = 0;
+    let overflowRetried = false;
 
     while (true) {
       this.#routePrompts();
@@ -255,6 +297,10 @@ class SingleWriterRuntime implements AgentRuntime {
         break;
       }
 
+      if (this.#compaction !== undefined) {
+        await this.#compactIfNeeded(turn, "threshold");
+      }
+
       modelCalls += 1;
       const step = await this.#runModelStep(turn);
       this.#routePrompts();
@@ -263,6 +309,16 @@ class SingleWriterRuntime implements AgentRuntime {
         break;
       }
       if (step.kind === "error") {
+        if (
+          !overflowRetried &&
+          !step.messageStarted &&
+          isContextOverflow(step.error) &&
+          (await this.#compactIfNeeded(turn, "overflow", true))
+        ) {
+          overflowRetried = true;
+          continue;
+        }
+        await this.#emitError(turn, step.error);
         stopReason = "error";
         break;
       }
@@ -270,6 +326,7 @@ class SingleWriterRuntime implements AgentRuntime {
       turnUsage = step.usage === undefined ? turnUsage : addUsage(turnUsage, step.usage);
       if (step.message !== undefined) {
         this.#history.push(step.message);
+        this.#historyEntryIds.push(step.messageEntryId);
       }
       for (const call of step.calls) {
         await this.#emitToolCallStart(turn, step.messageId, call);
@@ -332,6 +389,7 @@ class SingleWriterRuntime implements AgentRuntime {
         messages: [...this.#history],
         tools: [...this.#tools],
       };
+      await this.#emitContextProjected(turn, request);
       for await (const event of this.#provider.stream(request, controller.signal)) {
         if (this.#interruptRequested) {
           break;
@@ -405,11 +463,10 @@ class SingleWriterRuntime implements AgentRuntime {
     const calls = finalizeToolCalls(pending);
 
     if (providerError !== undefined) {
-      await this.#emitError(turn, providerError);
       if (messageStarted) {
         await this.#emitMessageEnd(turn, messageId, "error", usage);
       }
-      return { kind: "error" };
+      return { kind: "error", error: providerError, messageStarted };
     }
 
     if (controller.signal.aborted || this.#interruptRequested) {
@@ -420,20 +477,23 @@ class SingleWriterRuntime implements AgentRuntime {
     }
 
     if (stopReason === undefined) {
-      await this.#emitError(turn, {
-        code: "provider_stream_incomplete",
-        message: "provider stream ended without a done event",
-        retryable: false,
-      });
       if (messageStarted) {
         await this.#emitMessageEnd(turn, messageId, "error", usage);
       }
-      return { kind: "error" };
+      return {
+        kind: "error",
+        error: {
+          code: "provider_stream_incomplete",
+          message: "provider stream ended without a done event",
+          retryable: false,
+        },
+        messageStarted,
+      };
     }
 
-    if (messageStarted) {
-      await this.#emitMessageEnd(turn, messageId, stopReason, usage);
-    }
+    const messageEntryId = messageStarted
+      ? await this.#emitMessageEnd(turn, messageId, stopReason, usage)
+      : undefined;
 
     const content: ContentPart[] = text.length > 0 ? [{ type: "text", text }] : [];
     const message: LlmMessage | undefined =
@@ -445,7 +505,7 @@ class SingleWriterRuntime implements AgentRuntime {
           }
         : undefined;
 
-    return { kind: "done", stopReason, calls, usage, message, messageId };
+    return { kind: "done", stopReason, calls, usage, message, messageId, messageEntryId };
   }
 
   async #applySteering(turn: ActiveTurn): Promise<boolean> {
@@ -455,8 +515,9 @@ class SingleWriterRuntime implements AgentRuntime {
       if (text === undefined) {
         break;
       }
-      await this.#emitUserMessage(turn, text, "steer");
+      const entryId = await this.#emitUserMessage(turn, text, "steer");
       this.#history.push({ role: "user", content: [{ type: "text", text }] });
+      this.#historyEntryIds.push(entryId);
       applied = true;
     }
     return applied;
@@ -468,13 +529,14 @@ class SingleWriterRuntime implements AgentRuntime {
       for (const call of calls) {
         await this.#emitToolExecutionStart(turn, call);
         const result = errorToolResult(call.id, "no tool executor is configured", "no_executor");
-        await this.#emitToolExecutionEnd(turn, call.id, result);
+        const entryId = await this.#emitToolExecutionEnd(turn, call.id, result);
         this.#history.push({
           role: "tool",
           toolCallId: call.id,
           toolName: call.name,
           content: result.content,
         });
+        this.#historyEntryIds.push(entryId);
       }
       return;
     }
@@ -489,13 +551,37 @@ class SingleWriterRuntime implements AgentRuntime {
     const started = new Set<string>();
     const ended = new Set<string>();
     const results = new Map<string, ToolResult>();
+    const entryIds = new Map<string, string | undefined>();
     let returned: ToolResult[] | undefined;
     let failure: unknown;
+
+    let sandboxState: SandboxState | undefined;
+    if (this.#sandbox !== undefined && this.#sandboxPolicy !== undefined) {
+      const state: SandboxState = {
+        backend: this.#sandbox.backend,
+        policy: this.#sandboxPolicy,
+        approvalMode: this.#sandbox.approvalMode ?? "on-request",
+        setPolicy: (policy) => {
+          this.#sandboxPolicy = policy;
+          state.policy = policy;
+        },
+      };
+      sandboxState = state;
+    }
 
     const context: ToolBatchContext = {
       sessionId: this.#sessionId,
       turnId: turn.id,
       signal: controller.signal,
+      ...(sandboxState === undefined ? {} : { sandbox: sandboxState }),
+      ...(sandboxState === undefined
+        ? {}
+        : {
+            recordSandboxDecision: (decision: SandboxDecision) =>
+              this.#emitSandboxDecision(turn, decision),
+            requestApproval: (request: ApprovalRequestInput) =>
+              this.#requestApproval(turn, request),
+          }),
       onStart: (call) => {
         if (started.has(call.id)) {
           return;
@@ -516,7 +602,11 @@ class SingleWriterRuntime implements AgentRuntime {
           started.add(call.id);
           this.#detach(this.#emitToolExecutionStart(turn, call));
         }
-        this.#detach(this.#emitToolExecutionEnd(turn, call.id, result));
+        this.#detach(
+          this.#emitToolExecutionEnd(turn, call.id, result).then((entryId) => {
+            entryIds.set(call.id, entryId);
+          }),
+        );
       },
     };
 
@@ -544,7 +634,8 @@ class SingleWriterRuntime implements AgentRuntime {
         await this.#emitToolExecutionStart(turn, call);
       }
       results.set(call.id, result);
-      await this.#emitToolExecutionEnd(turn, call.id, result);
+      const entryId = await this.#emitToolExecutionEnd(turn, call.id, result);
+      entryIds.set(call.id, entryId);
     }
 
     for (const call of calls) {
@@ -556,6 +647,7 @@ class SingleWriterRuntime implements AgentRuntime {
           toolName: call.name,
           content: result.content,
         });
+        this.#historyEntryIds.push(entryIds.get(call.id));
       }
     }
   }
@@ -568,10 +660,12 @@ class SingleWriterRuntime implements AgentRuntime {
     return { ...this.#base(), turnId: turn.id };
   }
 
-  #emit(event: AgentEvent): Promise<void> {
+  #emit(event: AgentEvent): Promise<string | undefined> {
+    let entryId: string | undefined;
     const run = this.#emissionChain.then(async () => {
       if (this.#sessionStore !== undefined) {
-        await this.#sessionStore.append(this.#sessionId, event, undefined);
+        const entry = await this.#sessionStore.append(this.#sessionId, event, undefined);
+        entryId = entry.id;
       }
       await this.#eventSink.emit(event);
     });
@@ -580,7 +674,7 @@ class SingleWriterRuntime implements AgentRuntime {
       () => undefined,
       () => undefined,
     );
-    return run;
+    return run.then(() => entryId);
   }
 
   async #flushEmissions(): Promise<void> {
@@ -588,7 +682,7 @@ class SingleWriterRuntime implements AgentRuntime {
   }
 
   // Executor callbacks have no caller to observe a rejected emission.
-  #detach(emission: Promise<void>): void {
+  #detach(emission: Promise<unknown>): void {
     void emission.catch(() => undefined);
   }
 
@@ -628,7 +722,11 @@ class SingleWriterRuntime implements AgentRuntime {
     await this.#emit(event);
   }
 
-  async #emitUserMessage(turn: ActiveTurn, text: string, delivery: Delivery): Promise<void> {
+  async #emitUserMessage(
+    turn: ActiveTurn,
+    text: string,
+    delivery: Delivery,
+  ): Promise<string | undefined> {
     const event: AgentEvent = {
       ...this.#turnMeta(turn),
       type: "user_message",
@@ -636,7 +734,7 @@ class SingleWriterRuntime implements AgentRuntime {
       delivery,
       message: { role: "user", text },
     };
-    await this.#emit(event);
+    return this.#emit(event);
   }
 
   async #emitMessageStart(turn: ActiveTurn, messageId: string): Promise<void> {
@@ -664,7 +762,7 @@ class SingleWriterRuntime implements AgentRuntime {
     messageId: string,
     stopReason: StopReason,
     usage: Usage | undefined,
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     const event: AgentEvent = {
       ...this.#turnMeta(turn),
       type: "message_end",
@@ -672,7 +770,7 @@ class SingleWriterRuntime implements AgentRuntime {
       stopReason,
       ...(usage !== undefined ? { usage } : {}),
     };
-    await this.#emit(event);
+    return this.#emit(event);
   }
 
   async #emitToolCallStart(turn: ActiveTurn, messageId: string, call: ToolCall): Promise<void> {
@@ -713,14 +811,14 @@ class SingleWriterRuntime implements AgentRuntime {
     turn: ActiveTurn,
     toolCallId: string,
     result: ToolResult,
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     const event: AgentEvent = {
       ...this.#turnMeta(turn),
       type: "tool_execution_end",
       toolCallId,
       result,
     };
-    await this.#emit(event);
+    return this.#emit(event);
   }
 
   async #emitError(turn: ActiveTurn, error: NormalizedError): Promise<void> {
@@ -730,6 +828,143 @@ class SingleWriterRuntime implements AgentRuntime {
       error,
     };
     await this.#emit(event);
+  }
+
+  async #emitSandboxDecision(turn: ActiveTurn, decision: SandboxDecision): Promise<void> {
+    await this.#emit({ ...this.#turnMeta(turn), type: "sandbox_decision", decision });
+  }
+
+  async #requestApproval(turn: ActiveTurn, input: ApprovalRequestInput): Promise<ApprovalDecision> {
+    const sandbox = this.#sandbox;
+    if (sandbox?.approve === undefined || (sandbox.approvalMode ?? "on-request") === "never") {
+      return "deny";
+    }
+    const approval: ApprovalRequest = {
+      id: this.#ids.next("approval"),
+      kind: input.kind,
+      ...(input.toolCallId === undefined ? {} : { toolCallId: input.toolCallId }),
+      toolName: input.toolName,
+      args: input.args,
+      reason: input.reason,
+      createdAt: this.#clock.now().toISOString(),
+    };
+    await this.#emit({ ...this.#turnMeta(turn), type: "approval_requested", approval });
+
+    let decision: ApprovalDecision;
+    try {
+      decision = await sandbox.approve(approval);
+    } catch {
+      decision = "deny";
+    }
+
+    await this.#emit({
+      ...this.#turnMeta(turn),
+      type: "approval_resolved",
+      approvalId: approval.id,
+      resolution: {
+        approvalId: approval.id,
+        decision,
+        resolvedAt: this.#clock.now().toISOString(),
+      },
+    });
+    return decision;
+  }
+
+  async #emitContextProjected(turn: ActiveTurn, request: LlmRequest): Promise<void> {
+    const event: AgentEvent = {
+      ...this.#turnMeta(turn),
+      type: "context_projected",
+      promptHash: hashPrompt({
+        system: request.system,
+        messages: request.messages,
+        tools: request.tools,
+      }),
+      system: request.system,
+      sections: this.#promptSections,
+      toolsAdded: this.#toolsAdded,
+      toolsRemoved: this.#toolsRemoved,
+      tools: request.tools,
+      messageCount: request.messages.length,
+      estimatedTokens: estimateMessages(request.messages),
+    };
+    await this.#emit(event);
+  }
+
+  async #compactIfNeeded(
+    turn: ActiveTurn,
+    reason: "threshold" | "overflow" | "manual",
+    force = false,
+  ): Promise<boolean> {
+    const settings = this.#compaction;
+    if (settings === undefined) {
+      return false;
+    }
+    const tokensBefore = estimateMessages(this.#history);
+    if (!force && tokensBefore <= settings.contextWindow - settings.reserveTokens) {
+      return false;
+    }
+    const cutIndex = findCompactionCut(this.#history, settings.keepRecentTurns, force);
+    if (cutIndex <= 0) {
+      return false;
+    }
+
+    this.#currentState = "compacting";
+    await this.#emitCompactionStart(turn, reason);
+    let summary: string;
+    try {
+      summary = (await settings.summarize(this.#history.slice(0, cutIndex))).trim();
+    } catch (error) {
+      summary = "";
+      await this.#emitError(turn, {
+        code: "compaction_failed",
+        message: errorMessage(error),
+        retryable: false,
+      });
+    }
+    if (summary.length === 0) {
+      summary = "Earlier conversation was compacted.";
+    }
+
+    const replacedEntryIds = this.#historyEntryIds
+      .slice(0, cutIndex)
+      .filter((entryId): entryId is string => entryId !== undefined);
+    this.#history = [compactedMessage(summary), ...this.#history.slice(cutIndex)];
+    const tokensAfter = estimateMessages(this.#history);
+    const entryId = await this.#emitCompactionEnd(turn, {
+      summary,
+      replacedEntryIds,
+      tokensBefore,
+      tokensAfter,
+    });
+    this.#historyEntryIds = [entryId, ...this.#historyEntryIds.slice(cutIndex)];
+    return true;
+  }
+
+  async #emitCompactionStart(
+    turn: ActiveTurn,
+    reason: "threshold" | "overflow" | "manual",
+  ): Promise<void> {
+    await this.#emit({ ...this.#turnMeta(turn), type: "compaction_start", reason });
+  }
+
+  async #emitCompactionEnd(
+    turn: ActiveTurn,
+    details: {
+      summary: string;
+      replacedEntryIds: string[];
+      tokensBefore: number;
+      tokensAfter: number;
+    },
+  ): Promise<string | undefined> {
+    return this.#emit({
+      ...this.#turnMeta(turn),
+      type: "compaction_end",
+      summary: details.summary,
+      replacedEntryIds: details.replacedEntryIds,
+      tokensBefore: details.tokensBefore,
+      tokensAfter: details.tokensAfter,
+      model: this.#model,
+    });
   }
 
   #resolveSettled(): void {
@@ -832,6 +1067,50 @@ function addOptional(left: number | undefined, right: number | undefined): numbe
 
 function providerFailure(error: unknown): NormalizedError {
   return { code: "provider_error", message: errorMessage(error), retryable: false };
+}
+
+function isContextOverflow(error: NormalizedError): boolean {
+  const haystack = `${error.code} ${error.message}`.toLowerCase();
+  return (
+    error.code === "context_overflow" ||
+    error.code === "context_length_exceeded" ||
+    haystack.includes("context length") ||
+    haystack.includes("maximum context") ||
+    haystack.includes("too many tokens") ||
+    haystack.includes("prompt is too long")
+  );
+}
+
+function findCompactionCut(
+  messages: LlmMessage[],
+  keepRecentTurns: number,
+  force: boolean,
+): number {
+  if (keepRecentTurns > 0) {
+    let seen = 0;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index]?.role !== "user") {
+        continue;
+      }
+      seen += 1;
+      if (seen === keepRecentTurns) {
+        return index;
+      }
+    }
+  }
+  if (!force) {
+    return 0;
+  }
+  for (let index = messages.length - 1; index > 0; index -= 1) {
+    if (messages[index]?.role === "user") {
+      return index;
+    }
+  }
+  return 0;
+}
+
+function compactedMessage(summary: string): LlmMessage {
+  return { role: "user", content: [{ type: "text", text: `[compacted context]\n${summary}` }] };
 }
 
 function errorMessage(error: unknown): string {

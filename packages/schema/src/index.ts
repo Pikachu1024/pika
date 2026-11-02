@@ -22,6 +22,8 @@ export type {
   AgentEventType,
   MessageDelta,
   NormalizedError,
+  PromptSection,
+  ProviderTool,
   ToolCall,
   ToolResult,
 } from "./events.js";
@@ -29,6 +31,8 @@ export {
   AgentEventSchema,
   MessageDeltaSchema,
   NormalizedErrorSchema,
+  PromptSectionSchema,
+  ProviderToolSchema,
   ToolCallSchema,
   ToolResultSchema,
 } from "./events.js";

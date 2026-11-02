@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
 import type { ContentPart, SessionEntry, ToolCall } from "@pika-harness/schema";
 import type { ContextProjector, ProjectionInput, ProjectionResult } from "../context.js";
-import type { LlmMessage, ProviderTool } from "../provider.js";
+import type { LlmMessage } from "../provider.js";
+import { hashPrompt } from "./hash.js";
 
 interface AssistantDraft {
   text: string;
@@ -75,6 +75,14 @@ function assistantMessage(draft: AssistantDraft): LlmMessage {
 
 function buildMessages(branch: SessionEntry[]): LlmMessage[] {
   const removedIds = new Set<string>();
+  const discardedMessageIds = new Set<string>();
+  for (const entry of branch) {
+    if (entry.event.type === "message_end") {
+      if (entry.event.stopReason === "error" || entry.event.stopReason === "aborted") {
+        discardedMessageIds.add(entry.event.messageId);
+      }
+    }
+  }
   const indexById = new Map<string, number>();
   branch.forEach((entry, index) => {
     indexById.set(entry.id, index);
@@ -148,9 +156,14 @@ function buildMessages(branch: SessionEntry[]): LlmMessage[] {
         break;
       case "message_start":
       case "message_end":
-        draftFor(event.messageId);
+        if (!discardedMessageIds.has(event.messageId)) {
+          draftFor(event.messageId);
+        }
         break;
       case "message_delta": {
+        if (discardedMessageIds.has(event.messageId)) {
+          break;
+        }
         const draft = draftFor(event.messageId);
         if (event.delta.kind === "text") {
           draft.text += event.delta.text;
@@ -160,6 +173,9 @@ function buildMessages(branch: SessionEntry[]): LlmMessage[] {
         break;
       }
       case "tool_call_start":
+        if (discardedMessageIds.has(event.messageId)) {
+          break;
+        }
         toolNames.set(event.call.id, event.call.name);
         draftFor(event.messageId).toolCalls.push(cloneToolCall(event.call));
         break;
@@ -224,38 +240,21 @@ function repairToolPairs(messages: LlmMessage[]): LlmMessage[] {
   return repaired;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map((item) => canonicalize(item));
-  }
-  if (isRecord(value)) {
-    const sorted: Record<string, unknown> = {};
-    for (const key of Object.keys(value).sort()) {
-      sorted[key] = canonicalize(value[key]);
-    }
-    return sorted;
-  }
-  return value;
-}
-
-function hashProjection(system: string, messages: LlmMessage[], tools: ProviderTool[]): string {
-  const serialized = JSON.stringify(canonicalize({ system, messages, tools }));
-  return createHash("sha256")
-    .update(serialized ?? "")
-    .digest("hex");
-}
-
 /** Creates the pure projector from session entries to provider messages. */
 export function createContextProjector(): ContextProjector {
   return {
     project(input: ProjectionInput): ProjectionResult {
       const branch = selectActiveBranch(input.entries);
       const messages = repairToolPairs(buildMessages(branch));
-      return { messages, promptHash: hashProjection(input.system, messages, input.tools) };
+      return {
+        messages,
+        promptHash: hashPrompt({ system: input.system, messages, tools: input.tools }),
+      };
     },
   };
+}
+
+/** Selects the active branch ending at the latest entry without mutating the log. */
+export function activeBranch(entries: SessionEntry[]): SessionEntry[] {
+  return selectActiveBranch(entries);
 }

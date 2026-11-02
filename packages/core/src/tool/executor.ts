@@ -1,4 +1,5 @@
 import type { ContentPart, ToolCall, ToolResult } from "@pika-harness/schema";
+import { canWidenPolicy, classifyToolCall, widenSandboxPolicy } from "../sandbox/decisions.js";
 import type {
   Tool,
   ToolBatchContext,
@@ -102,6 +103,54 @@ export class ToolBatchExecutor implements ToolExecutor {
 
   async #runCall(entry: ValidCall, context: ToolBatchContext): Promise<ToolResult> {
     const { call, tool, args } = entry;
+    const sandbox = context.sandbox;
+    let effectivePolicy = sandbox?.policy;
+
+    if (sandbox !== undefined) {
+      const authorization = classifyToolCall({
+        call,
+        tool,
+        policy: sandbox.policy,
+        backend: sandbox.backend,
+        approvalMode: sandbox.approvalMode ?? "on-request",
+      });
+      await context.recordSandboxDecision?.(authorization.decision);
+      if (authorization.decision.outcome === "deny") {
+        const approved =
+          context.requestApproval === undefined
+            ? undefined
+            : await context.requestApproval({
+                kind: "sandbox-escalation",
+                toolCallId: call.id,
+                toolName: call.name,
+                args: asArgumentRecord(args),
+                reason: authorization.decision.reason,
+              });
+        if (approved === undefined || approved === "deny") {
+          context.onStart(call);
+          const result = sandboxDeniedResult(call, authorization.decision.reason);
+          context.onEnd(call, result);
+          return result;
+        }
+
+        const kind = authorization.escalation;
+        effectivePolicy =
+          kind !== undefined && canWidenPolicy(sandbox.policy, kind)
+            ? widenSandboxPolicy(sandbox.policy, kind)
+            : sandbox.policy;
+        if (approved === "approve_for_session" && effectivePolicy.mode !== sandbox.policy.mode) {
+          sandbox.setPolicy?.(effectivePolicy);
+        }
+        await context.recordSandboxDecision?.({
+          toolCallId: call.id,
+          backend: sandbox.backend,
+          mode: effectivePolicy.mode,
+          outcome: "allow",
+          reason: `escalation approved for ${call.name}: ${authorization.decision.reason}`,
+        });
+      }
+    }
+
     context.onStart(call);
 
     let result: ToolResult;
@@ -113,6 +162,13 @@ export class ToolBatchExecutor implements ToolExecutor {
           toolCallId: call.id,
           signal: context.signal,
           onUpdate: (chunk) => context.onUpdate(call, chunk),
+          ...(effectivePolicy === undefined ? {} : { sandboxPolicy: effectivePolicy }),
+          ...(context.recordSandboxDecision === undefined
+            ? {}
+            : { recordSandboxDecision: context.recordSandboxDecision }),
+          ...(context.requestApproval === undefined
+            ? {}
+            : { requestApproval: context.requestApproval }),
         },
         args,
       );
@@ -225,6 +281,17 @@ function errorResult(call: ToolCall, message: string, code: string): ToolResult 
     content: [{ type: "error", message, code }],
     isError: true,
   };
+}
+
+function sandboxDeniedResult(call: ToolCall, reason: string): ToolResult {
+  return errorResult(call, `denied by sandbox policy: ${reason}`, "sandbox_denied");
+}
+
+function asArgumentRecord(args: unknown): Record<string, unknown> {
+  if (typeof args === "object" && args !== null && !Array.isArray(args)) {
+    return args as Record<string, unknown>;
+  }
+  return { value: args };
 }
 
 function abortedResult(call: ToolCall, signal: AbortSignal): ToolResult {

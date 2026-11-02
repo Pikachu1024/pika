@@ -34,25 +34,40 @@ export class PathPolicyError extends Error {
 
 /** Creates a path policy that authorizes in-process file reads and writes. */
 export function createPathPolicy(options: CreatePathPolicyOptions): PathPolicy {
-  let rootsPromise: Promise<CanonicalRoots> | undefined;
-  const loadRoots = (): Promise<CanonicalRoots> => {
-    // Roots are canonicalized once per policy so every later comparison is
-    // symlink-free even though the resolver itself is asynchronous.
-    rootsPromise ??= canonicalizeRoots(options);
-    return rootsPromise;
+  const rootsCache = new Map<string, Promise<CanonicalRoots>>();
+  const loadRoots = (policy: SandboxPolicy): Promise<CanonicalRoots> => {
+    const key = JSON.stringify([
+      policy.workspaceRoot,
+      policy.mode,
+      policy.writableRoots,
+      policy.deniedReads,
+    ]);
+    let roots = rootsCache.get(key);
+    if (roots === undefined) {
+      // Roots are canonicalized per policy so every comparison is symlink-free
+      // even though the resolver itself is asynchronous.
+      roots = canonicalizeRoots(options.workspaceRoot, policy);
+      rootsCache.set(key, roots);
+    }
+    return roots;
   };
 
   return {
-    async resolve(requestedPath: string, operation: PathOperation): Promise<string> {
+    async resolve(
+      requestedPath: string,
+      operation: PathOperation,
+      override?: SandboxPolicy,
+    ): Promise<string> {
       if (requestedPath.length === 0) {
         throw new PathPolicyError("invalid-path", "path must not be empty");
       }
       if (requestedPath.includes("\0")) {
         throw new PathPolicyError("invalid-path", "path must not contain a null byte");
       }
-      const roots = await loadRoots();
+      const policy = override ?? options.policy;
+      const roots = await loadRoots(policy);
       const requested = path.resolve(roots.workspaceRoot, requestedPath);
-      if (operation === "write" && options.policy.mode === "read-only") {
+      if (operation === "write" && policy.mode === "read-only") {
         throw new PathPolicyError("read-only", `write denied by read-only policy: ${requested}`);
       }
       // Symlinks are resolved before authorization so a link inside the
@@ -62,7 +77,7 @@ export function createPathPolicy(options: CreatePathPolicyOptions): PathPolicy {
       if (roots.deniedReads.some((denied) => isInsidePath(canonical, denied))) {
         throw new PathPolicyError("denied-read", `read denied by policy: ${requested}`);
       }
-      if (options.policy.mode === "danger-full-access") return canonical;
+      if (policy.mode === "danger-full-access") return canonical;
       if (operation === "read") {
         if (!isInsidePath(canonical, roots.workspaceRoot)) {
           throw escapeError(
@@ -101,17 +116,18 @@ function escapeError(
   return new PathPolicyError("symlink-escape", `${reason}: ${requested} resolves to ${canonical}`);
 }
 
-async function canonicalizeRoots(options: CreatePathPolicyOptions): Promise<CanonicalRoots> {
-  const workspaceRoot = path.resolve(options.workspaceRoot);
+async function canonicalizeRoots(
+  fallbackWorkspaceRoot: string,
+  policy: SandboxPolicy,
+): Promise<CanonicalRoots> {
+  const workspaceRoot = path.resolve(policy.workspaceRoot || fallbackWorkspaceRoot);
   const [workspace, writableRoots, deniedReads] = await Promise.all([
     canonicalizePath(workspaceRoot),
     Promise.all(
-      options.policy.writableRoots.map((root) =>
-        canonicalizePath(path.resolve(workspaceRoot, root)),
-      ),
+      policy.writableRoots.map((root) => canonicalizePath(path.resolve(workspaceRoot, root))),
     ),
     Promise.all(
-      options.policy.deniedReads.map((root) => canonicalizePath(path.resolve(workspaceRoot, root))),
+      policy.deniedReads.map((root) => canonicalizePath(path.resolve(workspaceRoot, root))),
     ),
   ]);
   return {

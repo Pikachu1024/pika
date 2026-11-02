@@ -56,6 +56,17 @@ export const NormalizedErrorSchema = zod.object({
   details: zod.record(zod.string(), zod.unknown()).optional(),
 });
 
+export const ProviderToolSchema = zod.object({
+  name: zod.string().min(1),
+  description: zod.string(),
+  parameters: zod.record(zod.string(), zod.unknown()),
+});
+
+export const PromptSectionSchema = zod.object({
+  name: zod.string().min(1),
+  content: zod.string(),
+});
+
 export const AgentEventSchema = zod.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: zod.literal("agent_start") }),
   EventBaseSchema.extend({ type: zod.literal("agent_end") }),
@@ -137,6 +148,17 @@ export const AgentEventSchema = zod.discriminatedUnion("type", [
     model: zod.string().min(1),
   }),
   TurnEventBaseSchema.extend({
+    type: zod.literal("context_projected"),
+    promptHash: zod.string().regex(/^[0-9a-f]{64}$/),
+    system: zod.string(),
+    sections: zod.array(PromptSectionSchema),
+    toolsAdded: zod.array(zod.string()),
+    toolsRemoved: zod.array(zod.string()),
+    tools: zod.array(ProviderToolSchema),
+    messageCount: zod.number().int().nonnegative(),
+    estimatedTokens: zod.number().int().nonnegative(),
+  }),
+  TurnEventBaseSchema.extend({
     type: zod.literal("error"),
     error: NormalizedErrorSchema,
   }),
@@ -147,5 +169,7 @@ export type ToolCall = zod.infer<typeof ToolCallSchema>;
 export type ToolResult = zod.infer<typeof ToolResultSchema>;
 export type MessageDelta = zod.infer<typeof MessageDeltaSchema>;
 export type NormalizedError = zod.infer<typeof NormalizedErrorSchema>;
+export type ProviderTool = zod.infer<typeof ProviderToolSchema>;
+export type PromptSection = zod.infer<typeof PromptSectionSchema>;
 export type AgentEvent = zod.infer<typeof AgentEventSchema>;
 export type AgentEventType = AgentEvent["type"];
