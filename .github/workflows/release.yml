@@ -1,0 +1,132 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+
+  build:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            target: bun-darwin-arm64
+            artifact: pika-darwin-arm64
+            smoke: true
+          - runner: macos-latest
+            target: bun-darwin-x64
+            artifact: pika-darwin-x64
+            smoke: false
+          - runner: ubuntu-latest
+            target: bun-linux-x64
+            artifact: pika-linux-x64
+            smoke: true
+          - runner: ubuntu-latest
+            target: bun-linux-arm64
+            artifact: pika-linux-arm64
+            smoke: false
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - name: Build ${{ matrix.artifact }}
+        env:
+          PIKA_BUN_TARGET: ${{ matrix.target }}
+        run: |
+          bun run build:binary
+          mv dist/bin/pika "dist/bin/${{ matrix.artifact }}"
+      - name: Smoke test
+        if: matrix.smoke
+        env:
+          PIKA_HOME: ${{ runner.temp }}/pika-home
+          PIKA_SANDBOX_BACKEND: none
+        run: |
+          "dist/bin/${{ matrix.artifact }}" --help >/dev/null
+          "dist/bin/${{ matrix.artifact }}" --prompt "release smoke"
+          test -d "$PIKA_HOME/sessions"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/bin/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: pika-*
+          merge-multiple: true
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Checksums
+        run: |
+          cd artifacts
+          sha256sum pika-* > SHA256SUMS
+          cat SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: pika ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          body: |
+            Standalone `pika` binaries built with `bun build --compile`.
+
+            | Platform | Asset |
+            | --- | --- |
+            | macOS Apple Silicon | `pika-darwin-arm64` |
+            | macOS Intel | `pika-darwin-x64` |
+            | Linux x64 | `pika-linux-x64` |
+            | Linux arm64 | `pika-linux-arm64` |
+
+            ```bash
+            curl -fsSLO https://github.com/${{ github.repository }}/releases/latest/download/pika-darwin-arm64
+            chmod +x pika-darwin-arm64
+            mv pika-darwin-arm64 ~/.local/bin/pika
+            ```
+
+            Verify with `SHA256SUMS` and run `pika --help`.
+          files: |
+            artifacts/pika-*
+            artifacts/SHA256SUMS
