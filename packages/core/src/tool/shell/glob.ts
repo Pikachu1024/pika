@@ -30,7 +30,7 @@ export function createGlobTool(options: GlobToolOptions): Tool {
       const args = rawArgs as GlobArgs;
       let root: string;
       try {
-        root = await options.pathPolicy.resolve(args.path ?? ".", "read");
+        root = await options.pathPolicy.resolve(args.path ?? ".", "read", context.sandboxPolicy);
       } catch (error) {
         return toToolError(error);
       }

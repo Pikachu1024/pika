@@ -233,6 +233,22 @@ describe("grep", () => {
     expect(errorCode(result)).toBe("outside-workspace");
     expect(executor.requests).toHaveLength(0);
   });
+
+  it("authorizes an outside path when the call policy widens", async () => {
+    const outside = path.join(base, "outside");
+    await mkdir(outside, { recursive: true });
+    const widened = resolveSandboxPolicy({
+      mode: "danger-full-access",
+      workspaceRoot: workspace,
+    });
+    const tool = createGrepTool({ executor, pathPolicy: pathPolicy(), policy, cwd: workspace });
+    const { result } = await run(tool, { pattern: "x", path: outside }, { sandboxPolicy: widened });
+
+    expect(result.isError).toBe(false);
+    const { request, policy: execPolicy } = single(executor.requests);
+    expect(execPolicy.mode).toBe("danger-full-access");
+    expect(request.args.at(-1)).toBe(outside);
+  });
 });
 
 describe("glob", () => {

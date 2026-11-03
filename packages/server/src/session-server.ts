@@ -73,11 +73,22 @@ export type CompactionFactory = (
   provider: Provider,
 ) => RuntimeCompactionOptions | undefined;
 
+/** Provider declarations and the executor that recognizes them, built as one pair. */
+export interface SessionTooling {
+  tools: ProviderTool[];
+  executor: ToolExecutor;
+}
+
+/** Builds tooling once per session with the already-resolved sandbox policy. */
+export type SessionToolingFactory = (
+  context: SessionContext,
+  policy: SandboxPolicy,
+) => SessionTooling;
+
 export interface SessionServerOptions {
   store: SessionStore;
   provider: Provider | ((context: SessionContext) => Provider);
-  toolExecutor?: ToolExecutor | ((context: SessionContext) => ToolExecutor);
-  tools?: ProviderTool[];
+  tooling?: SessionTooling | SessionToolingFactory;
   systemPrompt?: string;
   promptSections?: PromptSection[];
   defaultModel?: string;
@@ -153,8 +164,7 @@ const NETWORK_RANK: Record<NetworkPolicy, number> = { none: 0, proxy: 1, full: 2
 export class DefaultSessionServer implements SessionServer {
   readonly #store: SessionStore;
   readonly #provider: SessionServerOptions["provider"];
-  readonly #toolExecutor: SessionServerOptions["toolExecutor"];
-  readonly #tools: ProviderTool[];
+  readonly #tooling: SessionServerOptions["tooling"];
   readonly #systemPrompt: string | undefined;
   readonly #promptSections: PromptSection[] | undefined;
   readonly #defaultModel: string | undefined;
@@ -172,8 +182,7 @@ export class DefaultSessionServer implements SessionServer {
   constructor(options: SessionServerOptions) {
     this.#store = options.store;
     this.#provider = options.provider;
-    this.#toolExecutor = options.toolExecutor;
-    this.#tools = [...(options.tools ?? [])];
+    this.#tooling = options.tooling;
     this.#systemPrompt = options.systemPrompt;
     this.#promptSections = options.promptSections;
     this.#defaultModel = options.defaultModel ?? defaultModelOf(options.provider);
@@ -556,8 +565,8 @@ export class DefaultSessionServer implements SessionServer {
   ): AgentRuntime {
     const provider =
       typeof this.#provider === "function" ? this.#provider(context) : this.#provider;
-    const toolExecutor =
-      typeof this.#toolExecutor === "function" ? this.#toolExecutor(context) : this.#toolExecutor;
+    const tooling =
+      typeof this.#tooling === "function" ? this.#tooling(context, policy) : this.#tooling;
     const compaction = this.#compaction?.(context, provider);
     return createRuntime({
       sessionId: context.sessionId,
@@ -570,11 +579,11 @@ export class DefaultSessionServer implements SessionServer {
       clock: this.#clock,
       ids: this.#ids,
       initialHistory: history,
-      tools: this.#tools,
+      tools: tooling?.tools ?? [],
       ...(compaction === undefined ? {} : { compaction }),
       ...(this.#systemPrompt === undefined ? {} : { systemPrompt: this.#systemPrompt }),
       ...(this.#promptSections === undefined ? {} : { promptSections: this.#promptSections }),
-      ...(toolExecutor === undefined ? {} : { toolExecutor }),
+      ...(tooling === undefined ? {} : { toolExecutor: tooling.executor }),
       sandbox: {
         backend: this.#sandbox.backend,
         policy,

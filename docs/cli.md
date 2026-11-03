@@ -6,6 +6,7 @@
 pika [--url <ws://host:port>] [--session <id>] [--cwd <path>]
 pika --prompt <text> [options]
 pika serve [--port <n>] [--host <addr>] [--dir <path>]
+           [--sandbox-backend <backend>]
 ```
 
 不带 `--prompt` 时进入 pi-tui 交互界面。`/` 开头触发命令补全，普通文本作为用户消息发送。
@@ -32,10 +33,29 @@ pika serve [--port <n>] [--host <addr>] [--dir <path>]
 | `--port <n>`                   | 监听端口，`0` 表示系统分配；默认 `PIKA_PORT` 或 `7331`  |
 | `--host <addr>`                | 监听地址，默认 `PIKA_HOST` 或 `127.0.0.1`               |
 | `--dir <path>`                 | 会话目录，默认 `PIKA_SESSION_DIR` 或 `./.pika/sessions` |
+| `--sandbox-backend <backend>`  | 工具执行后端，默认 `PIKA_SANDBOX_BACKEND` 或 `auto`     |
 | `--exit-on-parent-stdin-close` | stdin 关闭时退出，供 launcher 使用                      |
 | `-h`, `--help`                 | 打印用法                                                |
 
 启动成功后打印实际监听地址。设置 `PIKA_SERVER_TOKEN` 时，所有 WebSocket 升级都必须携带匹配的 `?token=`，否则在读取任何 JSON-RPC 帧之前返回 401。
+
+### 工具执行与沙箱后端
+
+本地服务为每个会话注册六个内置工具：`read_file`、`write_file`、`edit_file`、`glob`、`grep`、`bash`。文件路径统一经过 `PathPolicy`（以会话工作目录为根），子进程统一经过服务启动时选定的 sandbox executor；超过 `maxOutputBytes` 的工具结果写入 `<会话目录>/<sessionId>/outputs`。需要升级 sandbox 的调用会以审批请求的形式出现，可用 `/approve` 或 `/deny` 处理。
+
+sandbox 后端在服务启动时选定一次，所有会话共用同一个 executor：
+
+| 取值       | 行为                                                                               |
+| ---------- | ---------------------------------------------------------------------------------- |
+| `auto`     | 默认值。macOS 使用 `seatbelt`，Linux 使用 `bwrap`；其他平台或都不可用时启动失败    |
+| `seatbelt` | macOS 的 `sandbox-exec`，必须已安装                                                |
+| `bwrap`    | Linux 的 bubblewrap，必须已安装                                                    |
+| `docker`   | Docker CLI 与守护进程 socket，必须可用                                             |
+| `none`     | 不做 OS 隔离，只保留进程内的 `PathPolicy` 与环境白名单；会削弱边界，仅用于本机调试 |
+
+显式指定的后端不可用、或 `auto` 找不到任何隔离后端时，服务在开始监听前失败，而不是静默降级。
+
+本地 TUI 模式（不带 `--url`）下服务由 launcher 拉起，launcher 不转发客户端参数，因此后端只能通过 `PIKA_SANDBOX_BACKEND` 选择；所有 `PIKA_*` 变量都会转给本地服务。远程模式（`--url` 或 `PIKA_SERVER_URL`）的后端由服务端运维方决定。
 
 ## 2. 模型目录
 

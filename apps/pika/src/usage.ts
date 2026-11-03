@@ -4,6 +4,7 @@ Usage:
   pika [options]                              start the TUI with a bundled local server
   pika --prompt <text> [options]              run one prompt and exit
   pika serve [--port <n>] [--host <addr>] [--dir <path>]
+             [--sandbox-backend <backend>]
                                               run the session server only
 
 Client options:
@@ -28,5 +29,6 @@ per-run token, then stops it when the client exits.
 Model presets load from .pika/models.json or PIKA_MODELS_FILE.
 Environment: PIKA_SERVER_URL, PIKA_MODELS_FILE, PIKA_LLM_BASE_URL,
 PIKA_LLM_MODEL, PIKA_LLM_API_KEY, PIKA_LLM_CONTEXT_WINDOW, PIKA_LLM_MAX_TOKENS,
-PIKA_SESSION_DIR.
+PIKA_SESSION_DIR, PIKA_SANDBOX_BACKEND.
+Sandbox backends: auto (default), none, seatbelt, bwrap, docker.
 `;

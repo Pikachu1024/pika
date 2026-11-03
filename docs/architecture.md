@@ -102,6 +102,8 @@ Provider adapter -> 模型线格式
 
 所有由工具发起的子进程执行都必须经过 sandbox executor。只有 `packages/adapters/src/sandbox/` 可以导入 `node:child_process`。审批决定“是否允许执行”，executor 决定“执行时能触碰什么”。进程内的文件工具同样要经过 `PathPolicy`，否则会绕过 OS 沙箱。
 
+`pika serve` 在启动时选定一个 executor，所有会话共用：`auto` 在 macOS 选 seatbelt、Linux 选 bwrap，其他平台或显式请求的后端不可用时启动直接失败，`none` 必须显式选择。会话创建时再用已收敛的沙箱策略构建该会话的工具声明、`PathPolicy` 和批量执行器，因此 fork 到不同工作目录的会话各自绑定到自己的工作区根，而子进程仍由同一个 executor 执行。
+
 ### 5.3 会话边界
 
 追加式会话日志是事实来源。上下文投影、提示词哈希、SQLite 索引、回放视图都是派生结果。回放只能读取日志，不能修改日志。压缩、审批结果、沙箱决策都作为事件记录，而不是就地改写历史。
@@ -143,7 +145,7 @@ provider 凭据只保留在 harness 进程内，不传给工具子进程。子�
 | `core` 沙箱      | 策略解析与单调收敛、`PathPolicy`、`NoopExecutor`、`Executor` 端口、审批与升级决策已实现             |
 | `core` 会话      | `SessionStore` 端口、内存实现、回放、恢复与 fork 已实现                                             |
 | `adapters`       | `PiAiProvider`、`NodeProcessExecutor`、Seatbelt/bwrap/Docker、JSONL/SQLite 存储、Skills、MCP 已实现 |
-| `server`         | 会话管理、审批路由、stdio/WebSocket/进程内传输、沙箱模式解析已实现                                  |
+| `server`         | 会话管理、审批路由、stdio/WebSocket/进程内传输、sandbox 后端选择与内置工具装配已实现                |
 | `client` / `cli` | 类型化 SDK、`pi-tui` 客户端、一次性 prompt 与交互式审批已实现                                       |
 
 实现进度以归档任务列表 `openspec/changes/archive/2026-11-02-agent-harness-foundation/tasks.md` 为准；能力契约在 `openspec/specs/`。

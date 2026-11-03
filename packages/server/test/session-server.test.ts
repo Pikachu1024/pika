@@ -12,7 +12,13 @@ import {
 } from "@pika-harness/core";
 import type { AgentEvent, JsonRpcMessage, ProtocolTransport } from "@pika-harness/schema";
 import { z } from "zod";
-import type { CompactionFactory, SessionContext, SessionServer } from "../src/index.js";
+import type {
+  CompactionFactory,
+  SessionContext,
+  SessionServer,
+  SessionTooling,
+  SessionToolingFactory,
+} from "../src/index.js";
 import { createInProcessTransportPair, createSessionServer } from "../src/index.js";
 
 const clock = { now: () => new Date("2026-01-01T00:00:00.000Z") };
@@ -114,7 +120,8 @@ interface HarnessOptions {
     approvalMode?: "untrusted" | "on-failure" | "on-request" | "never";
   };
   tools?: Tool[];
-  provider?: (context: SessionContext) => Provider;
+  tooling?: SessionTooling | SessionToolingFactory;
+  provider?: Provider | ((context: SessionContext) => Provider);
   compaction?: CompactionFactory;
 }
 
@@ -134,7 +141,14 @@ async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
       : options.provider;
   const registry = new ToolRegistry();
   for (const tool of options.tools ?? []) registry.register(tool);
-  const toolExecutor = options.tools === undefined ? undefined : new ToolBatchExecutor(registry);
+  const tooling =
+    options.tooling ??
+    (options.tools === undefined
+      ? undefined
+      : {
+          tools: registry.toProviderTools(),
+          executor: new ToolBatchExecutor(registry),
+        });
 
   const server = createSessionServer({
     store,
@@ -143,8 +157,7 @@ async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
     defaultModel: "faux-model",
     clock,
     ids,
-    ...(toolExecutor === undefined ? {} : { toolExecutor }),
-    ...(options.tools === undefined ? {} : { tools: registry.toProviderTools() }),
+    ...(tooling === undefined ? {} : { tooling }),
     ...(options.compaction === undefined ? {} : { compaction: options.compaction }),
     sandbox: {
       backend: "none",
@@ -376,6 +389,63 @@ describe("session server", () => {
     expect(
       decisions.map((event) => (event.type === "sandbox_decision" ? event.decision.outcome : "")),
     ).toEqual(["deny", "allow"]);
+    expect(harness.events.at(-1)?.type).toBe("settled");
+  });
+
+  it("resolves tooling once per session and uses its declarations and executor together", async () => {
+    const provider = new FauxProvider([toolCallTurn("write_note", { text: "hi" }), textTurn]);
+    const seen: Array<{ sessionId: string; workspaceRoot: string }> = [];
+    const executed: string[] = [];
+    const harness = await createHarness({
+      provider,
+      tooling: (context, policy) => {
+        seen.push({ sessionId: context.sessionId, workspaceRoot: policy.workspaceRoot });
+        return {
+          tools: [{ name: "write_note", description: "Writes a note", parameters: {} }],
+          executor: {
+            async execute(calls) {
+              executed.push(...calls.map((call) => call.name));
+              return calls.map((call) => ({
+                toolCallId: call.id,
+                content: [{ type: "text" as const, text: "paired result" }],
+                isError: false,
+              }));
+            },
+          },
+        };
+      },
+    });
+    const started = await startSession(harness);
+
+    await harness.send("turn.start", { sessionId: started.sessionId, text: "write a note" });
+    await waitFor(harness, (events) => events.some((event) => event.type === "settled"));
+
+    expect(seen).toEqual([
+      { sessionId: started.sessionId, workspaceRoot: path.resolve(harness.cwd) },
+    ]);
+    expect(provider.requests[0]?.tools.map((tool) => tool.name)).toEqual(["write_note"]);
+    expect(executed).toEqual(["write_note"]);
+    const toolEnd = harness.events.find((event) => event.type === "tool_execution_end");
+    expect(toolEnd?.type === "tool_execution_end" ? toolEnd.result : undefined).toMatchObject({
+      isError: false,
+      content: [{ type: "text", text: "paired result" }],
+    });
+  });
+
+  it("returns an explicit not-configured result when no tooling is provided", async () => {
+    const harness = await createHarness({
+      turns: [toolCallTurn("write_note", { text: "hi" }), textTurn],
+    });
+    const started = await startSession(harness);
+
+    await harness.send("turn.start", { sessionId: started.sessionId, text: "write a note" });
+    await waitFor(harness, (events) => events.some((event) => event.type === "settled"));
+
+    const toolEnd = harness.events.find((event) => event.type === "tool_execution_end");
+    expect(toolEnd?.type === "tool_execution_end" ? toolEnd.result : undefined).toMatchObject({
+      isError: true,
+      content: [{ type: "error", code: "no_executor" }],
+    });
     expect(harness.events.at(-1)?.type).toBe("settled");
   });
 

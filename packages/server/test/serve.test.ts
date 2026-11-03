@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createWebSocketClientTransport, PikaClient } from "@pika-harness/client";
-import { parseServeArgs, startServe } from "@pika-harness/server";
+import { parseServeArgs, serveUsage, startServe } from "@pika-harness/server";
 import { WebSocket } from "ws";
 
 const entry = path.resolve(import.meta.dir, "../src/bin.ts");
@@ -44,6 +44,31 @@ describe("serve flags", () => {
     expect(parseServeArgs(["--exit-on-parent-stdin-close"]).exitOnParentStdinClose).toBe(true);
   });
 
+  it("selects the sandbox backend from the environment and flags", () => {
+    expect(parseServeArgs([], {}).sandboxBackend).toBe("auto");
+    expect(parseServeArgs([], { PIKA_SANDBOX_BACKEND: "bwrap" }).sandboxBackend).toBe("bwrap");
+    expect(
+      parseServeArgs(["--sandbox-backend", "none"], { PIKA_SANDBOX_BACKEND: "seatbelt" })
+        .sandboxBackend,
+    ).toBe("none");
+  });
+
+  it("rejects an unknown sandbox backend with the accepted list", () => {
+    expect(() => parseServeArgs(["--sandbox-backend", "chroot"], {})).toThrow(
+      /auto, none, seatbelt, bwrap, docker/,
+    );
+    expect(() => parseServeArgs([], { PIKA_SANDBOX_BACKEND: "chroot" })).toThrow(
+      /auto, none, seatbelt, bwrap, docker/,
+    );
+  });
+
+  it("documents every sandbox backend in the usage text", () => {
+    for (const value of ["auto", "none", "seatbelt", "bwrap", "docker"]) {
+      expect(serveUsage).toContain(value);
+    }
+    expect(parseServeArgs(["--help"]).help).toBe(true);
+  });
+
   it("rejects unknown flags and invalid ports", () => {
     expect(() => parseServeArgs(["--nope"])).toThrow(/unknown option/);
     expect(() => parseServeArgs(["--port", "70000"])).toThrow(/invalid port/);
@@ -59,7 +84,13 @@ describe("serve persistence", () => {
       await rm(dir, { recursive: true, force: true });
     });
 
-    const first = await startServe({ port: 0, host: "127.0.0.1", dir, help: false });
+    const first = await startServe({
+      port: 0,
+      host: "127.0.0.1",
+      dir,
+      sandboxBackend: "none",
+      help: false,
+    });
     const firstClient = new PikaClient({ transport: createWebSocketClientTransport(first.url) });
     clients.push(firstClient);
     await firstClient.initialize();
@@ -67,7 +98,13 @@ describe("serve persistence", () => {
     firstClient.close();
     await first.close();
 
-    const second = await startServe({ port: 0, host: "127.0.0.1", dir, help: false });
+    const second = await startServe({
+      port: 0,
+      host: "127.0.0.1",
+      dir,
+      sandboxBackend: "none",
+      help: false,
+    });
     cleanups.push(() => second.close());
     const secondClient = new PikaClient({ transport: createWebSocketClientTransport(second.url) });
     clients.push(secondClient);
@@ -76,6 +113,44 @@ describe("serve persistence", () => {
 
     expect(secondSession.session.id).not.toBe(firstSession.session.id);
   }, 20_000);
+
+  it("reports the selected backend to sessions", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "pika-serve-backend-"));
+    cleanups.push(() => rm(dir, { recursive: true, force: true }));
+
+    const running = await startServe({
+      port: 0,
+      host: "127.0.0.1",
+      dir,
+      sandboxBackend: "none",
+      help: false,
+    });
+    cleanups.push(() => running.close());
+    const sessionClient = new PikaClient({
+      transport: createWebSocketClientTransport(running.url),
+    });
+    cleanups.push(() => sessionClient.close());
+    await sessionClient.initialize();
+    const started = await sessionClient.startSession({ cwd: dir });
+
+    expect(started.sandbox.backend).toBe("none");
+  }, 20_000);
+
+  it("rejects an unavailable explicit backend before listening", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "pika-serve-backend-"));
+    cleanups.push(() => rm(dir, { recursive: true, force: true }));
+
+    await expect(
+      startServe({
+        port: 0,
+        host: "127.0.0.1",
+        dir,
+        sandboxBackend: "bwrap",
+        sandboxDeps: { bwrapExecutor: () => undefined },
+        help: false,
+      }),
+    ).rejects.toThrow(/bwrap.*unavailable/);
+  });
 });
 
 describe("serve entry", () => {
@@ -91,6 +166,7 @@ describe("serve entry", () => {
         HOME: process.env.HOME ?? tmpdir(),
         TMPDIR: process.env.TMPDIR ?? tmpdir(),
         PIKA_PROVIDER: "echo",
+        PIKA_SANDBOX_BACKEND: "none",
       },
     });
     cleanups.push(async () => {

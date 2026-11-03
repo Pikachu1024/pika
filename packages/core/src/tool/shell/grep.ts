@@ -32,7 +32,7 @@ export function createGrepTool(options: GrepToolOptions): Tool {
       const args = rawArgs as GrepArgs;
       let target: string;
       try {
-        target = await options.pathPolicy.resolve(args.path ?? ".", "read");
+        target = await options.pathPolicy.resolve(args.path ?? ".", "read", context.sandboxPolicy);
       } catch (error) {
         return toToolError(error);
       }

@@ -14,6 +14,13 @@ import type {
   ModelInfo,
   Provider,
 } from "@pika-harness/core";
+import type { ServeSandboxDependencies, ServeSandboxSelection } from "./serve-sandbox.js";
+import {
+  createServeSandbox,
+  isServeSandboxSelection,
+  SERVE_SANDBOX_SELECTIONS,
+} from "./serve-sandbox.js";
+import { createServeTooling } from "./serve-tooling.js";
 import type { CompactionFactory, SessionContext } from "./session-server.js";
 import { createSessionServer } from "./session-server.js";
 import { startWebSocketServer } from "./websocket.js";
@@ -30,11 +37,15 @@ export interface ServeOptions {
   port: number;
   host: string;
   dir: string;
+  /** Sandbox backend for tool execution; defaults to `auto`. */
+  sandboxBackend?: ServeSandboxSelection;
   llm?: ServeLlmOptions;
   /** When set, WebSocket clients must present this token to connect. */
   token?: string;
   /** Internal flag used by the launcher so the server exits with its parent. */
   exitOnParentStdinClose?: boolean;
+  /** Internal: injectable sandbox factories so tests do not depend on the host. */
+  sandboxDeps?: ServeSandboxDependencies;
   help: boolean;
 }
 
@@ -45,9 +56,14 @@ export interface RunningServe {
 
 export const serveUsage = `pika serve: JSON-RPC session server over WebSocket
 
-Usage: pika serve [--port <number>] [--host <address>] [--dir <path>]
+Usage: pika serve [--port <number>] [--host <address>] [--dir <path>] [--sandbox-backend <backend>]
 
 Defaults: port 7331, host 127.0.0.1, sessions in ./.pika/sessions
+Sandbox backends: auto (default), none, seatbelt, bwrap, docker.
+auto selects seatbelt on macOS and bwrap on Linux, and fails when neither is
+available. seatbelt, bwrap, and docker must be installed when requested
+explicitly. none disables OS isolation; only the in-process path policy applies.
+Set PIKA_SANDBOX_BACKEND or pass --sandbox-backend to choose the backend.
 The default provider is a deterministic echo provider for smoke testing.
 Set PIKA_PROVIDER=openai (or openai-compatible) plus PIKA_LLM_BASE_URL,
 PIKA_LLM_API_KEY, and PIKA_LLM_MODEL to use an OpenAI-compatible endpoint.
@@ -88,6 +104,7 @@ export function parseServeArgs(argv: string[], env: NodeJS.ProcessEnv = process.
     port: Number(env.PIKA_PORT ?? 7331),
     host: env.PIKA_HOST ?? "127.0.0.1",
     dir: env.PIKA_SESSION_DIR ?? path.join(process.cwd(), ".pika", "sessions"),
+    sandboxBackend: sandboxBackendValue(env.PIKA_SANDBOX_BACKEND),
     ...(llm === undefined ? {} : { llm }),
     ...(token === undefined || token.length === 0 ? {} : { token }),
     help: false,
@@ -108,6 +125,13 @@ export function parseServeArgs(argv: string[], env: NodeJS.ProcessEnv = process.
         if (next !== undefined) options.dir = next;
         index += 1;
         break;
+      case "--sandbox-backend":
+        if (next === undefined) {
+          throw new Error("missing value for --sandbox-backend");
+        }
+        options.sandboxBackend = sandboxBackendValue(next);
+        index += 1;
+        break;
       case "--exit-on-parent-stdin-close":
         options.exitOnParentStdinClose = true;
         break;
@@ -123,6 +147,16 @@ export function parseServeArgs(argv: string[], env: NodeJS.ProcessEnv = process.
     throw new Error(`invalid port: ${options.port}`);
   }
   return options;
+}
+
+function sandboxBackendValue(value: string | undefined): ServeSandboxSelection {
+  const requested = value ?? "auto";
+  if (!isServeSandboxSelection(requested)) {
+    throw new Error(
+      `invalid sandbox backend: ${requested}; expected one of: ${SERVE_SANDBOX_SELECTIONS.join(", ")}`,
+    );
+  }
+  return requested;
 }
 
 /** Reads the optional OpenAI-compatible provider configuration. */
@@ -214,6 +248,10 @@ async function summarizeWithProvider(
 
 /** Starts a session server and its WebSocket listener. */
 export async function startServe(options: ServeOptions): Promise<RunningServe> {
+  const sandbox = await createServeSandbox(
+    options.sandboxBackend ?? "auto",
+    options.sandboxDeps ?? {},
+  );
   // Persistent session directories outlive a single server run, so ids must not reset per process.
   const ids: IdGenerator = { next: (prefix) => `${prefix}_${randomUUID()}` };
   const store = new JsonlSessionStore(options.dir, { ids });
@@ -224,7 +262,12 @@ export async function startServe(options: ServeOptions): Promise<RunningServe> {
     defaultModel: options.llm?.model ?? "echo-model",
     ids,
     compaction: createCompactionFactory(options.llm),
-    sandbox: { backend: "none", defaultMode: "workspace-write", defaultNetwork: "none" },
+    tooling: createServeTooling({ sessionsDir: options.dir, executor: sandbox.executor }),
+    sandbox: {
+      backend: sandbox.backend,
+      defaultMode: "workspace-write",
+      defaultNetwork: "none",
+    },
   });
 
   const listener = await startWebSocketServer({

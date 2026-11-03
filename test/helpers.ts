@@ -1,14 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type {
-  Clock,
-  LlmEvent,
-  Provider,
-  SessionStore,
-  Tool,
-  ToolExecutor,
-} from "@pika-harness/core";
+import type { Clock, LlmEvent, Provider, SessionStore, Tool } from "@pika-harness/core";
 import {
   createIdGenerator,
   FauxProvider,
@@ -22,6 +15,8 @@ import type {
   ServerSandboxOptions,
   SessionServer,
   SessionServerOptions,
+  SessionTooling,
+  SessionToolingFactory,
 } from "@pika-harness/server";
 import { createSessionServer } from "@pika-harness/server";
 
@@ -47,9 +42,9 @@ export interface TestServerOptions {
   provider?: Provider;
   turns?: LlmEvent[][];
   tools?: Tool[];
+  tooling?: SessionTooling | SessionToolingFactory;
   sandbox?: Partial<ServerSandboxOptions>;
   approvalTimeoutMs?: number;
-  toolExecutor?: ToolExecutor;
   compaction?: CompactionFactory;
   /** Reuses an external store, for example a JSONL store on disk. */
   store?: SessionStore;
@@ -74,10 +69,14 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
   const registry = new ToolRegistry();
   for (const tool of options.tools ?? []) registry.register(tool);
 
-  let toolExecutor = options.toolExecutor;
-  if (toolExecutor === undefined && options.tools !== undefined) {
-    toolExecutor = new ToolBatchExecutor(registry);
-  }
+  const tooling =
+    options.tooling ??
+    (options.tools === undefined
+      ? undefined
+      : {
+          tools: registry.toProviderTools(),
+          executor: new ToolBatchExecutor(registry),
+        });
 
   const serverOptions: SessionServerOptions = {
     store,
@@ -86,8 +85,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     defaultModel: "faux-model",
     clock,
     ids,
-    ...(toolExecutor === undefined ? {} : { toolExecutor }),
-    ...(options.tools === undefined ? {} : { tools: registry.toProviderTools() }),
+    ...(tooling === undefined ? {} : { tooling }),
     sandbox: {
       backend: "none",
       defaultMode: "workspace-write",
