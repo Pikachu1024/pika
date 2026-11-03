@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { parseArgs } from "../src/cli.js";
+import { parseArgs, usage } from "../src/cli.js";
 
 const ENV_KEYS = [
   "PIKA_LLM_BASE_URL",
@@ -25,6 +25,14 @@ afterEach(() => {
     else process.env[key] = value;
   }
   saved.clear();
+});
+
+describe("cli usage text", () => {
+  it("documents the Pika home paths and environment variable", () => {
+    expect(usage).toContain("PIKA_HOME");
+    expect(usage).toContain("$PIKA_HOME/models.json (~/.pika/models.json)");
+    expect(usage).toContain("$PIKA_HOME/credentials.json");
+  });
 });
 
 describe("cli LLM options", () => {

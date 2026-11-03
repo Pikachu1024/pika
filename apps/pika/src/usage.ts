@@ -20,14 +20,17 @@ Client options:
   --llm-max-tokens <tokens>     maximum output tokens
   -h, --help                    show this help
 
-Slash commands: /help, /models, /model, /config, /status, /usage, /context,
-/new, /sessions, /resume, /fork, /handoff, /sandbox, /compact, /btw,
+Slash commands: /help, /models, /model, /connect, /config, /status, /usage,
+/context, /new, /sessions, /resume, /fork, /handoff, /sandbox, /compact, /btw,
 /approve, /deny, /quit.
 
 Without --url, pika starts a server on 127.0.0.1 with an ephemeral port and a
 per-run token, then stops it when the client exits.
-Model presets load from .pika/models.json or PIKA_MODELS_FILE.
-Environment: PIKA_SERVER_URL, PIKA_MODELS_FILE, PIKA_LLM_BASE_URL,
+Run /connect in the TUI to add an endpoint; it saves to the user catalog.
+Model presets load from $PIKA_HOME/models.json (~/.pika/models.json), .pika/models.json,
+or PIKA_MODELS_FILE; credentials live in $PIKA_HOME/credentials.json.
+Sessions default to $PIKA_HOME/sessions (~/.pika/sessions).
+Environment: PIKA_HOME, PIKA_SERVER_URL, PIKA_MODELS_FILE, PIKA_CONFIG_DIR, PIKA_LLM_BASE_URL,
 PIKA_LLM_MODEL, PIKA_LLM_API_KEY, PIKA_LLM_CONTEXT_WINDOW, PIKA_LLM_MAX_TOKENS,
 PIKA_SESSION_DIR, PIKA_SANDBOX_BACKEND.
 Sandbox backends: auto (default), none, seatbelt, bwrap, docker.

@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { randomUUID } from "node:crypto";
+import { homedir } from "node:os";
 import path from "node:path";
 import {
   createOpenAiCompatibleModel,
@@ -58,7 +59,9 @@ export const serveUsage = `pika serve: JSON-RPC session server over WebSocket
 
 Usage: pika serve [--port <number>] [--host <address>] [--dir <path>] [--sandbox-backend <backend>]
 
-Defaults: port 7331, host 127.0.0.1, sessions in ./.pika/sessions
+Defaults: port 7331, host 127.0.0.1, sessions in $PIKA_HOME/sessions (~/.pika/sessions)
+Set PIKA_HOME to relocate the Pika home directory, or PIKA_SESSION_DIR/--dir to
+override the session directory itself.
 Sandbox backends: auto (default), none, seatbelt, bwrap, docker.
 auto selects seatbelt on macOS and bwrap on Linux, and fails when neither is
 available. seatbelt, bwrap, and docker must be installed when requested
@@ -103,7 +106,7 @@ export function parseServeArgs(argv: string[], env: NodeJS.ProcessEnv = process.
   const options: ServeOptions = {
     port: Number(env.PIKA_PORT ?? 7331),
     host: env.PIKA_HOST ?? "127.0.0.1",
-    dir: env.PIKA_SESSION_DIR ?? path.join(process.cwd(), ".pika", "sessions"),
+    dir: env.PIKA_SESSION_DIR ?? defaultSessionDirectory(env),
     sandboxBackend: sandboxBackendValue(env.PIKA_SANDBOX_BACKEND),
     ...(llm === undefined ? {} : { llm }),
     ...(token === undefined || token.length === 0 ? {} : { token }),
@@ -147,6 +150,14 @@ export function parseServeArgs(argv: string[], env: NodeJS.ProcessEnv = process.
     throw new Error(`invalid port: ${options.port}`);
   }
   return options;
+}
+
+function defaultSessionDirectory(env: NodeJS.ProcessEnv): string {
+  if (env.PIKA_HOME !== undefined && env.PIKA_HOME.length > 0) {
+    return path.join(path.resolve(env.PIKA_HOME), "sessions");
+  }
+  const home = env.HOME === undefined || env.HOME.length === 0 ? homedir() : env.HOME;
+  return path.join(home, ".pika", "sessions");
 }
 
 function sandboxBackendValue(value: string | undefined): ServeSandboxSelection {

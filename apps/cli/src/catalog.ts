@@ -1,23 +1,35 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { LlmEndpoint, ModelCatalog, ModelPreset } from "@pika-harness/schema";
 import { ModelCatalogSchema } from "@pika-harness/schema";
+import type { Credentials } from "./credentials.js";
+import { configDirectory } from "./home.js";
 
 /** Alias of the implicit preset built from explicit LLM flags or environment values. */
 export const ENV_PRESET_NAME = "env";
 
+/** Where a preset was defined, used by `/models` and `/config`. */
+export type PresetSource = "env" | "user" | "project";
+
 export interface CatalogState {
-  path?: string;
+  projectPath?: string;
+  userPath?: string;
   presets: ModelPreset[];
+  /** Source of each named preset; the implicit environment preset is reported separately. */
+  sources: Record<string, PresetSource>;
+  /** Non-fatal catalog problems, already formatted with the file path. */
+  warnings: string[];
   defaultAlias?: string;
   envPreset?: ModelPreset;
   envEndpoint?: LlmEndpoint;
+  credentials?: Credentials;
 }
 
 export interface LoadCatalogInput {
   cwd: string;
   env: Record<string, string | undefined>;
   llm?: LlmEndpoint;
+  credentials?: Credentials;
 }
 
 export interface ResolvedPreset {
@@ -53,27 +65,82 @@ export function environmentPreset(llm: LlmEndpoint): ModelPreset {
   return presetFromEndpoint(llm);
 }
 
-/** Loads the project catalog, or returns only the implicit environment preset. */
+/** Loads the user and project catalogs, or returns only the implicit environment preset. */
 export async function loadCatalog(input: LoadCatalogInput): Promise<CatalogState> {
   const envPreset = input.llm === undefined ? undefined : environmentPreset(input.llm);
   const envFields: Pick<CatalogState, "envPreset" | "envEndpoint"> =
     input.llm === undefined || envPreset === undefined ? {} : { envPreset, envEndpoint: input.llm };
   const explicitPath = input.env.PIKA_MODELS_FILE;
-  const catalogPath =
+  const projectPath =
     explicitPath === undefined || explicitPath.length === 0
       ? path.join(input.cwd, ".pika", "models.json")
       : path.resolve(input.cwd, explicitPath);
+  const userPath = path.join(configDirectory(input.env), "models.json");
 
+  const explicit = explicitPath !== undefined && explicitPath.length > 0;
+  const [project, user] = await Promise.all([
+    readCatalogFile(projectPath, explicit),
+    readCatalogFile(userPath),
+  ]);
+  const warnings = [project.warning, user.warning].filter(
+    (warning): warning is string => warning !== undefined,
+  );
+
+  // User presets come first; a project preset with the same alias replaces it in place.
+  const merged = new Map<string, ModelPreset>();
+  const sources: Record<string, PresetSource> = {};
+  for (const preset of user.catalog?.models ?? []) {
+    merged.set(preset.name, preset);
+    sources[preset.name] = "user";
+  }
+  for (const preset of project.catalog?.models ?? []) {
+    merged.set(preset.name, preset);
+    sources[preset.name] = "project";
+  }
+
+  const defaultAlias = project.catalog?.default ?? user.catalog?.default;
+  return {
+    ...(project.catalog === undefined ? {} : { projectPath }),
+    ...(user.catalog === undefined ? {} : { userPath }),
+    presets: [...merged.values()],
+    sources,
+    warnings,
+    ...(defaultAlias === undefined ? {} : { defaultAlias }),
+    ...(input.credentials === undefined ? {} : { credentials: input.credentials }),
+    ...envFields,
+  };
+}
+
+/** Persists one preset in the user catalog, replacing a same-name entry atomically. */
+export async function saveUserPreset(
+  env: Record<string, string | undefined>,
+  preset: ModelPreset,
+): Promise<void> {
+  const directory = configDirectory(env);
+  const file = path.join(directory, "models.json");
+  const existing = await readUserCatalogForWrite(file);
+  const models = [...existing.models.filter((entry) => entry.name !== preset.name), preset];
+  const catalog: ModelCatalog = { default: preset.name, models };
+  const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
+
+  try {
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await writeFile(temporary, `${JSON.stringify(catalog, null, 2)}\n`, "utf8");
+    await rename(temporary, file);
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => undefined);
+    throw new CatalogError(file, describeFileError(error));
+  }
+}
+
+async function readUserCatalogForWrite(catalogPath: string): Promise<ModelCatalog> {
   let contents: string;
   try {
     contents = await readFile(catalogPath, "utf8");
   } catch (error) {
-    if (explicitPath === undefined && isMissingFile(error)) {
-      return { presets: [], ...envFields };
-    }
+    if (isMissingFile(error)) return { models: [] };
     throw new CatalogError(catalogPath, describeFileError(error));
   }
-
   let document: unknown;
   try {
     document = JSON.parse(contents);
@@ -81,21 +148,46 @@ export async function loadCatalog(input: LoadCatalogInput): Promise<CatalogState
     throw new CatalogError(catalogPath, "invalid JSON");
   }
   const parsed = ModelCatalogSchema.safeParse(document);
-  if (!parsed.success) {
-    throw new CatalogError(catalogPath, formatIssues(parsed.error));
+  if (!parsed.success) throw new CatalogError(catalogPath, formatIssues(parsed.error));
+  return parsed.data;
+}
+
+interface CatalogFileResult {
+  catalog?: ModelCatalog;
+  warning?: string;
+}
+
+async function readCatalogFile(catalogPath: string, required = false): Promise<CatalogFileResult> {
+  let contents: string;
+  try {
+    contents = await readFile(catalogPath, "utf8");
+  } catch (error) {
+    if (isMissingFile(error) && !required) return {};
+    return { warning: new CatalogError(catalogPath, describeFileError(error)).message };
   }
-  const catalog: ModelCatalog = parsed.data;
-  return {
-    path: catalogPath,
-    presets: catalog.models,
-    ...(catalog.default === undefined ? {} : { defaultAlias: catalog.default }),
-    ...envFields,
-  };
+
+  let document: unknown;
+  try {
+    document = JSON.parse(contents);
+  } catch {
+    return { warning: new CatalogError(catalogPath, "invalid JSON").message };
+  }
+  const parsed = ModelCatalogSchema.safeParse(document);
+  if (!parsed.success) {
+    return { warning: new CatalogError(catalogPath, formatIssues(parsed.error)).message };
+  }
+  return { catalog: parsed.data };
 }
 
 /** Presets visible to `/models`, with the implicit environment preset first. */
 export function catalogPresets(state: CatalogState): ModelPreset[] {
   return state.envPreset === undefined ? [...state.presets] : [state.envPreset, ...state.presets];
+}
+
+/** Source of a preset alias, defaulting to `project` for hand-built state. */
+export function presetSource(state: CatalogState, alias: string): PresetSource {
+  if (state.envPreset !== undefined && alias === state.envPreset.name) return "env";
+  return state.sources[alias] ?? "project";
 }
 
 /** Picks the alias used when the client connects: env flags, then default, then first preset. */
@@ -122,10 +214,12 @@ export function resolvePreset(
   if (preset === undefined) {
     throw new Error(`unknown model preset: ${alias}`);
   }
-  const apiKey = preset.apiKeyEnv === undefined ? undefined : env[preset.apiKeyEnv];
-  if (preset.apiKeyEnv !== undefined && (apiKey === undefined || apiKey.length === 0)) {
+  const environmentKey = preset.apiKeyEnv === undefined ? undefined : env[preset.apiKeyEnv];
+  const storedKey = state.credentials?.[alias];
+  if (preset.apiKeyEnv !== undefined && !isSet(environmentKey) && !isSet(storedKey)) {
     throw new MissingApiKeyError(preset.apiKeyEnv, alias);
   }
+  const apiKey = isSet(environmentKey) ? environmentKey : storedKey;
   return {
     alias,
     preset,
@@ -135,6 +229,7 @@ export function resolvePreset(
       ...(apiKey === undefined ? {} : { apiKey }),
       ...(preset.contextWindow === undefined ? {} : { contextWindow: preset.contextWindow }),
       ...(preset.maxTokens === undefined ? {} : { maxTokens: preset.maxTokens }),
+      ...(preset.tools === undefined ? {} : { tools: preset.tools }),
     },
   };
 }
@@ -156,7 +251,8 @@ export function describeCatalog(
   env: Record<string, string | undefined>,
 ): string[] {
   const lines = [
-    `catalog: ${state.path ?? "(none)"}`,
+    `project catalog: ${state.projectPath ?? "(none)"}`,
+    `user catalog: ${state.userPath ?? "(none)"}`,
     `default: ${initialAlias(state) ?? "(none)"}`,
   ];
   const presets = catalogPresets(state);
@@ -166,11 +262,12 @@ export function describeCatalog(
   }
   lines.push("presets:");
   for (const preset of presets) {
+    const stored = isSet(state.credentials?.[preset.name]) ? "set" : "missing";
     const key =
       preset.apiKeyEnv === undefined
-        ? "no api key variable"
-        : `${preset.apiKeyEnv} ${isSet(env[preset.apiKeyEnv]) ? "set" : "missing"}`;
-    lines.push(`  ${preset.name} (${preset.model}) - ${key}`);
+        ? `credentials ${stored}`
+        : `${preset.apiKeyEnv} ${isSet(env[preset.apiKeyEnv]) ? "set" : "missing"}, credentials ${stored}`;
+    lines.push(`  ${preset.name} (${preset.model}) [${presetSource(state, preset.name)}] - ${key}`);
   }
   return lines;
 }
@@ -182,6 +279,7 @@ function presetFromEndpoint(llm: LlmEndpoint): ModelPreset {
     baseUrl: llm.baseUrl,
     ...(llm.contextWindow === undefined ? {} : { contextWindow: llm.contextWindow }),
     ...(llm.maxTokens === undefined ? {} : { maxTokens: llm.maxTokens }),
+    ...(llm.tools === undefined ? {} : { tools: llm.tools }),
   };
 }
 

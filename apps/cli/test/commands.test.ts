@@ -9,13 +9,23 @@ import {
   slashCommands,
 } from "../src/commands/index.js";
 import { parseCommand, tokenize } from "../src/commands/tokenizer.js";
-import type { CommandContext, HandoffOptions, SandboxOptions } from "../src/commands/types.js";
+import type {
+  CommandContext,
+  ConnectOptions,
+  HandoffOptions,
+  SandboxOptions,
+} from "../src/commands/types.js";
 
 function preset(name: string): ModelPreset {
   return { name, model: `${name}-model`, baseUrl: `http://127.0.0.1/${name}/v1` };
 }
 
-const catalog: CatalogState = { presets: [preset("alpha"), preset("beta")], defaultAlias: "alpha" };
+const catalog: CatalogState = {
+  presets: [preset("alpha"), preset("beta")],
+  sources: { alpha: "project", beta: "project" },
+  warnings: [],
+  defaultAlias: "alpha",
+};
 
 class FakeContext implements CommandContext {
   readonly catalog = catalog;
@@ -24,7 +34,10 @@ class FakeContext implements CommandContext {
   readonly output: string[] = [];
   readonly calls: string[] = [];
   readonly selections: Array<string | undefined> = [];
+  readonly prompts: Array<string | undefined> = [];
+  readonly connectOptions: ConnectOptions[] = [];
   quitCalled = false;
+  busy = false;
 
   print(text: string): void {
     this.output.push(text);
@@ -36,6 +49,19 @@ class FakeContext implements CommandContext {
 
   select(_title: string, _items: SelectItem[]): Promise<string | undefined> {
     return Promise.resolve(this.selections.shift());
+  }
+
+  promptText(_title: string): Promise<string | undefined> {
+    return Promise.resolve(this.prompts.shift());
+  }
+
+  promptSecret(_title: string): Promise<string | undefined> {
+    return Promise.resolve(this.prompts.shift());
+  }
+
+  async connect(options: ConnectOptions): Promise<void> {
+    this.connectOptions.push(options);
+    this.calls.push("connect");
   }
 
   showModels(): void {
@@ -199,6 +225,47 @@ describe("command registry", () => {
       "fork:head",
     ]);
     expect(context.quitCalled).toBe(true);
+  });
+
+  it("collects a connect preset and rejects incomplete endpoints", async () => {
+    const context = new FakeContext();
+    const commands = createCommands(context);
+    context.selections.push("openai-compatible", "disabled");
+    context.prompts.push("http://127.0.0.1:59000/v1", "jiuwei-tcm", "", "smoke-key", "32768", "");
+    await dispatchCommand(commands, "/connect", context);
+    expect(context.connectOptions).toEqual([
+      {
+        provider: "openai-compatible",
+        alias: "jiuwei-tcm",
+        baseUrl: "http://127.0.0.1:59000/v1",
+        model: "jiuwei-tcm",
+        apiKey: "smoke-key",
+        contextWindow: 32768,
+        tools: false,
+      },
+    ]);
+
+    const missingBase = new FakeContext();
+    missingBase.selections.push("openai-compatible");
+    missingBase.prompts.push("");
+    await dispatchCommand(createCommands(missingBase), "/connect", missingBase);
+    expect(missingBase.text()).toContain("missing base URL");
+    expect(missingBase.connectOptions).toEqual([]);
+
+    const missingModel = new FakeContext();
+    missingModel.selections.push("openai-compatible");
+    missingModel.prompts.push("http://127.0.0.1:59000/v1", "");
+    await dispatchCommand(createCommands(missingModel), "/connect", missingModel);
+    expect(missingModel.text()).toContain("missing model id");
+    expect(missingModel.connectOptions).toEqual([]);
+  });
+
+  it("rejects /connect while a turn is running", async () => {
+    const context = new FakeContext();
+    context.busy = true;
+    await dispatchCommand(createCommands(context), "/connect", context);
+    expect(context.text()).toContain("not settled");
+    expect(context.connectOptions).toEqual([]);
   });
 
   it("exposes completion metadata", async () => {

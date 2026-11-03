@@ -21,7 +21,7 @@
     },
     "apps/cli": {
       "name": "@pika-harness/cli",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@mariozechner/pi-tui": "0.73.1",
         "@pika-harness/client": "workspace:*",
@@ -30,7 +30,7 @@
     },
     "apps/pika": {
       "name": "@pika-harness/pika",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "bin": {
         "pika": "./dist/bin.js",
       },
@@ -42,7 +42,7 @@
     },
     "packages/adapters": {
       "name": "@pika-harness/adapters",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@mariozechner/pi-ai": "0.73.1",
         "@modelcontextprotocol/sdk": "1.32.2",
@@ -54,14 +54,14 @@
     },
     "packages/client": {
       "name": "@pika-harness/client",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@pika-harness/schema": "workspace:*",
       },
     },
     "packages/core": {
       "name": "@pika-harness/core",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@pika-harness/schema": "workspace:*",
         "zod": "4.6.7",
@@ -69,14 +69,14 @@
     },
     "packages/schema": {
       "name": "@pika-harness/schema",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "zod": "4.6.7",
       },
     },
     "packages/server": {
       "name": "@pika-harness/server",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@pika-harness/adapters": "workspace:*",
         "@pika-harness/core": "workspace:*",

@@ -114,6 +114,8 @@ export const LlmEndpointSchema = z.object({
   apiKey: z.string().min(1).optional(),
   contextWindow: z.number().int().positive().optional(),
   maxTokens: z.number().int().positive().optional(),
+  /** Defaults to true; false keeps built-in tools out of the provider request. */
+  tools: z.boolean().optional(),
 });
 export type LlmEndpoint = z.infer<typeof LlmEndpointSchema>;
 

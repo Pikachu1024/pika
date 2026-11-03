@@ -10,6 +10,8 @@ export const ModelPresetSchema = z.object({
   apiKeyEnv: z.string().min(1).optional(),
   contextWindow: positiveInteger.optional(),
   maxTokens: positiveInteger.optional(),
+  /** Defaults to true; false keeps built-in tools out of the provider request. */
+  tools: z.boolean().optional(),
 });
 
 export const ModelCatalogSchema = z

@@ -80,7 +80,7 @@
 | ------------------ | -------------------------------------------- | -------------------- |
 | `initialize`       | `{ clientName?, protocolVersion? }`          | 协议版本与服务端能力 |
 | `session.start`    | `{ cwd, model?, sandbox? }`                  | 会话摘要与生效沙箱   |
-| `session.resume`   | `{ sessionId }`                              | 会话摘要与生效沙箱   |
+| `session.resume`   | `{ sessionId, llm? }`                        | 会话摘要与生效沙箱   |
 | `session.fork`     | `{ sessionId, entryId, model?, llm?, cwd? }` | 新会话元数据         |
 | `session.list`     | `{}`                                         | 会话摘要数组         |
 | `session.compact`  | `{ sessionId }`                              | 压缩前后的 token 数  |
@@ -154,9 +154,26 @@
 }
 ```
 
+### LLM 端点
+
+`session.start`、`session.fork` 和 `session.resume` 的 `llm` 字段都是可选的：
+
+```json
+{
+  "baseUrl": "http://127.0.0.1:59000/v1",
+  "model": "local-model",
+  "apiKey": "secret",
+  "contextWindow": 32768,
+  "maxTokens": 4096,
+  "tools": false
+}
+```
+
+`baseUrl` 与 `model` 必填；`apiKey`、`contextWindow`、`maxTokens` 与 `tools` 可选。`tools` 省略时视为 `true`；设为 `false` 时服务端不向 provider 声明内置工具，适用于拒绝 `tools` 字段的端点。`apiKey` 只保留在服务端内存中，不写入会话日志。
+
 ### session.fork
 
-`model`、`llm` 和 `cwd` 可选。省略时继承源会话；`cwd` 相对于服务端默认工作目录解析，并重新走一遍沙箱上限检查。源会话仍在运行（未 settled）时返回 1002。
+`model`、`llm` 和 `cwd` 可选。省略时继承源会话；`cwd` 相对于服务端默认工作目录解析，并重新走一遍沙箱上限检查。省略 `llm` 时，fork 继承源会话的端点及其 `tools` 设置。源会话仍在运行（未 settled）时返回 1002。
 
 ```json
 {

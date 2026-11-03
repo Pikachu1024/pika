@@ -3,7 +3,7 @@ import { CombinedAutocompleteProvider } from "@mariozechner/pi-tui";
 import type { NetworkPolicy, SandboxMode } from "@pika-harness/schema";
 import { catalogPresets } from "../catalog.js";
 import { parseCommand } from "./tokenizer.js";
-import type { CommandContext, HandoffOptions, SandboxOptions } from "./types.js";
+import type { CommandContext, ConnectOptions, HandoffOptions, SandboxOptions } from "./types.js";
 
 export interface CommandDefinition {
   name: string;
@@ -44,6 +44,15 @@ export function createCommands(context: CommandContext): CommandDefinition[] {
     name: "config",
     description: "Show the catalog path, presets, and key variable presence",
     run: () => context.showConfig(),
+  });
+
+  commands.push({
+    name: "connect",
+    description: "Configure an LLM endpoint and start a new session with it",
+    run: async () => {
+      const options = await collectConnectOptions(context);
+      if (options !== undefined) await context.connect(options);
+    },
   });
 
   commands.push({
@@ -219,6 +228,95 @@ function aliasCompletions(context: CommandContext, prefix: string): Autocomplete
       label: preset.name,
       description: preset.model,
     }));
+}
+
+async function collectConnectOptions(context: CommandContext): Promise<ConnectOptions | undefined> {
+  if (context.busy) {
+    throw new Error("session is not settled; wait for the current turn to finish");
+  }
+  const provider = await context.select("Provider type", [
+    {
+      value: "openai-compatible",
+      label: "OpenAI-compatible",
+      description: "Chat completions over HTTP",
+    },
+  ]);
+  if (provider !== "openai-compatible") return undefined;
+
+  const baseUrlInput = await context.promptText("Base URL");
+  if (baseUrlInput === undefined) return undefined;
+  const baseUrl = baseUrlInput.trim();
+  if (baseUrl === "") throw new Error("missing base URL for /connect");
+  assertHttpUrl(baseUrl);
+
+  const modelInput = await context.promptText("Model id");
+  if (modelInput === undefined) return undefined;
+  const model = modelInput.trim();
+  if (model === "") throw new Error("missing model id for /connect");
+
+  const aliasInput = await context.promptText(`Alias (default: ${model})`);
+  if (aliasInput === undefined) return undefined;
+  const alias = aliasInput.trim() === "" ? model : aliasInput.trim();
+  if (alias === "env") throw new Error('alias "env" is reserved for environment flags');
+
+  const keyInput = await context.promptSecret("API key (optional)");
+  if (keyInput === undefined) return undefined;
+
+  const windowInput = await context.promptText("Context window (optional)");
+  if (windowInput === undefined) return undefined;
+  const contextWindow = parseOptionalPositiveInteger(windowInput, "context window");
+
+  const maxTokensInput = await context.promptText("Max output tokens (optional)");
+  if (maxTokensInput === undefined) return undefined;
+  const maxTokens = parseOptionalPositiveInteger(maxTokensInput, "max output tokens");
+
+  const toolsChoice = await context.select("Tool calling", [
+    {
+      value: "enabled",
+      label: "Enabled",
+      description: "Declare built-in tools to the provider",
+    },
+    {
+      value: "disabled",
+      label: "Disabled",
+      description: "For endpoints that reject the tools field",
+    },
+  ]);
+  if (toolsChoice === undefined) return undefined;
+
+  const apiKey = keyInput.trim();
+  return {
+    provider: "openai-compatible",
+    alias,
+    baseUrl,
+    model,
+    ...(apiKey === "" ? {} : { apiKey }),
+    ...(contextWindow === undefined ? {} : { contextWindow }),
+    ...(maxTokens === undefined ? {} : { maxTokens }),
+    tools: toolsChoice !== "disabled",
+  };
+}
+
+function assertHttpUrl(value: string): void {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`invalid base URL: ${value}`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`invalid base URL protocol: ${url.protocol}`);
+  }
+}
+
+function parseOptionalPositiveInteger(value: string, label: string): number | undefined {
+  const trimmed = value.trim();
+  if (trimmed === "") return undefined;
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`invalid ${label}: ${trimmed}`);
+  }
+  return parsed;
 }
 
 function parseHandoffArgs(args: string[]): HandoffOptions {

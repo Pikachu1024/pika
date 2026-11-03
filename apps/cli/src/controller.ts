@@ -4,19 +4,37 @@ import type {
   AgentEvent,
   EffectiveSandbox,
   LlmEndpoint,
+  ModelPreset,
   SandboxMode,
   SessionMeta,
   SessionSummary,
   Usage,
 } from "@pika-harness/schema";
 import type { CatalogState } from "./catalog.js";
-import { catalogPresets, describeCatalog, endpointForModel, resolvePreset } from "./catalog.js";
-import type { CommandContext, HandoffOptions, SandboxOptions } from "./commands/types.js";
+import {
+  catalogPresets,
+  describeCatalog,
+  endpointForModel,
+  loadCatalog,
+  presetSource,
+  resolvePreset,
+  saveUserPreset,
+} from "./catalog.js";
+import type {
+  CommandContext,
+  ConnectOptions,
+  HandoffOptions,
+  SandboxOptions,
+} from "./commands/types.js";
+import type { Credentials } from "./credentials.js";
+import { loadCredentials, saveCredential } from "./credentials.js";
 
 export interface ControllerUi {
   append(text: string): void;
   setStatus(text: string): void;
   select(title: string, items: SelectItem[]): Promise<string | undefined>;
+  promptText(title: string): Promise<string | undefined>;
+  promptSecret(title: string): Promise<string | undefined>;
   resetTranscript(): void;
 }
 
@@ -47,7 +65,7 @@ type CompactionReason = "threshold" | "overflow" | "manual";
 export class SessionController implements CommandContext {
   readonly #client: PikaClient;
   readonly #ui: ControllerUi;
-  readonly #catalog: CatalogState;
+  #catalog: CatalogState;
   readonly #cwd: string;
   readonly #env: Record<string, string | undefined>;
   readonly #onQuit: () => void;
@@ -104,6 +122,11 @@ export class SessionController implements CommandContext {
   async start(): Promise<void> {
     await this.#subscribe();
     this.#ui.append(`session ${this.#session.id} (${this.#session.model}, ${this.#session.cwd})\n`);
+    if (catalogPresets(this.#catalog).length === 0) {
+      this.#ui.append(
+        "No LLM endpoint is configured. Run /connect to add one, or set PIKA_LLM_* variables.\n",
+      );
+    }
     this.#updateStatus();
   }
 
@@ -130,6 +153,14 @@ export class SessionController implements CommandContext {
 
   select(title: string, items: SelectItem[]): Promise<string | undefined> {
     return this.#ui.select(title, items);
+  }
+
+  promptText(title: string): Promise<string | undefined> {
+    return this.#ui.promptText(title);
+  }
+
+  promptSecret(title: string): Promise<string | undefined> {
+    return this.#ui.promptSecret(title);
   }
 
   sessionIds(): string[] {
@@ -163,15 +194,17 @@ export class SessionController implements CommandContext {
     if (presets.length === 0) {
       this.print(
         `No model catalog configured. Active model: ${this.#session.model}. ` +
-          "Create .pika/models.json or set PIKA_LLM_* variables.\n",
+          "Run /connect, create .pika/models.json, or set PIKA_LLM_* variables.\n",
       );
       return;
     }
     const active = this.#activeAlias();
     const lines = presets.map((preset) => {
       const selected = preset.name === active;
+      const source = presetSource(this.#catalog, preset.name);
       const hint = preset.apiKeyEnv === undefined ? "" : ` key=${preset.apiKeyEnv}`;
-      return `${selected ? "*" : " "} ${preset.name} - ${preset.model}${hint}`;
+      const tools = preset.tools === false ? " tools=off" : "";
+      return `${selected ? "*" : " "} ${preset.name} - ${preset.model} [${source}]${hint}${tools}`;
     });
     this.print(`${lines.join("\n")}\n`);
   }
@@ -299,6 +332,65 @@ export class SessionController implements CommandContext {
     this.print(
       `[session] handed off to ${result.session.id} (${resolved.alias}, ${result.session.cwd})\n`,
     );
+  }
+
+  async connect(options: ConnectOptions): Promise<void> {
+    this.#requireSettled();
+    const preset: ModelPreset = {
+      name: options.alias,
+      model: options.model,
+      baseUrl: options.baseUrl,
+      ...(options.contextWindow === undefined ? {} : { contextWindow: options.contextWindow }),
+      ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
+      ...(options.tools ? {} : { tools: false }),
+    };
+    if (options.apiKey !== undefined) {
+      await saveCredential(this.#env, options.alias, options.apiKey);
+    }
+    await saveUserPreset(this.#env, preset);
+
+    let credentials: Credentials = this.#catalog.credentials ?? {};
+    try {
+      credentials = await loadCredentials(this.#env);
+    } catch (error) {
+      this.print(`[credentials] ${errorMessage(error)}\n`);
+    }
+    this.#catalog = await loadCatalog({
+      cwd: this.#cwd,
+      env: this.#env,
+      credentials,
+      ...(this.#catalog.envEndpoint === undefined ? {} : { llm: this.#catalog.envEndpoint }),
+    });
+    for (const warning of this.#catalog.warnings) this.print(`[catalog] ${warning}\n`);
+
+    const endpoint: LlmEndpoint = {
+      baseUrl: options.baseUrl,
+      model: options.model,
+      ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
+      ...(options.contextWindow === undefined ? {} : { contextWindow: options.contextWindow }),
+      ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
+      ...(options.tools ? {} : { tools: false }),
+    };
+    const result = await this.#client.startSession({
+      cwd: this.#session.cwd,
+      model: options.model,
+      llm: endpoint,
+      sandbox: { mode: this.#sandbox.mode, network: this.#sandbox.network },
+    });
+    await this.#adopt(result.session, result.sandbox, options.alias);
+    this.print(`[connect] saved ${options.alias}; session ${result.session.id}\n`);
+
+    const check = await this.#ui.select("Check the endpoint now?", [
+      { value: "yes", label: "Run /btw ping" },
+      { value: "no", label: "Skip" },
+    ]);
+    if (check !== "yes") return;
+    try {
+      const side = await this.#client.askSideQuestion(result.session.id, "ping");
+      this.print(`[connect] check ok: ${side.text}\n`);
+    } catch (error) {
+      this.print(`[connect] check failed: ${errorMessage(error)}\n`);
+    }
   }
 
   async setSandbox(options: SandboxOptions): Promise<void> {
@@ -544,6 +636,10 @@ export class SessionController implements CommandContext {
       `${state} | ${model} | ${this.#sandbox.mode}/${this.#sandbox.network} | ${this.#session.id} | ${this.#session.cwd}`,
     );
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function toolResultText(event: Extract<AgentEvent, { type: "tool_execution_end" }>): string {

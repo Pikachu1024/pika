@@ -4,6 +4,7 @@ import process from "node:process";
 import type { SelectItem, Terminal } from "@mariozechner/pi-tui";
 import {
   Editor,
+  Input,
   Key,
   matchesKey,
   ProcessTerminal,
@@ -21,16 +22,14 @@ import type {
   ToolResult,
 } from "@pika-harness/schema";
 import type { CatalogState } from "./catalog.js";
-import {
-  catalogPresets,
-  environmentPreset,
-  initialAlias,
-  loadCatalog,
-  resolvePreset,
-} from "./catalog.js";
+import { catalogPresets, initialAlias, loadCatalog, resolvePreset } from "./catalog.js";
 import { createAutocomplete, createCommands, dispatchCommand } from "./commands/index.js";
 import type { ControllerUi } from "./controller.js";
 import { SessionController } from "./controller.js";
+import type { Credentials } from "./credentials.js";
+import { loadCredentials } from "./credentials.js";
+import { migrateLegacyConfig } from "./home.js";
+import { MaskedInput } from "./masked-input.js";
 
 interface CliOptions {
   url: string;
@@ -43,7 +42,7 @@ interface CliOptions {
   help: boolean;
 }
 
-const usage = `pika: interactive protocol client for the Pika Harness server
+export const usage = `pika: interactive protocol client for the Pika Harness server
 
 Usage:
   pika [--url ws://127.0.0.1:7331] [--session <id>] [--cwd <path>]
@@ -53,11 +52,12 @@ Usage:
        [--llm-context-window <tokens>] [--llm-max-tokens <tokens>]
 
 Without --prompt the client starts an interactive pi-tui session.
-Slash commands: /help, /models, /model, /config, /status, /usage, /context,
+Slash commands: /help, /models, /model, /connect, /config, /status, /usage, /context,
 /new, /sessions, /resume, /fork, /handoff, /sandbox, /compact, /btw,
 /approve, /deny, /quit.
-Model presets load from .pika/models.json or PIKA_MODELS_FILE.
-Environment: PIKA_SERVER_URL, PIKA_MODELS_FILE, PIKA_LLM_BASE_URL,
+Model presets load from $PIKA_HOME/models.json (~/.pika/models.json), .pika/models.json,
+or PIKA_MODELS_FILE; credentials live in $PIKA_HOME/credentials.json.
+Environment: PIKA_HOME, PIKA_SERVER_URL, PIKA_MODELS_FILE, PIKA_CONFIG_DIR, PIKA_LLM_BASE_URL,
 PIKA_LLM_MODEL, PIKA_LLM_API_KEY, PIKA_LLM_CONTEXT_WINDOW, PIKA_LLM_MAX_TOKENS.
 `;
 
@@ -303,6 +303,7 @@ const theme = {
 
 export interface InteractiveOptions {
   terminal?: Terminal;
+  env?: Record<string, string | undefined>;
   onExit?: () => void;
 }
 
@@ -357,6 +358,28 @@ export async function runInteractive(
       tui.requestRender();
     });
 
+  const prompt = (title: string, secret: boolean): Promise<string | undefined> =>
+    new Promise((resolve) => {
+      const heading = new Text(title);
+      const input = secret ? new MaskedInput() : new Input();
+      let done = false;
+      const finish = (value: string | undefined): void => {
+        if (done) return;
+        done = true;
+        tui.removeChild(heading);
+        tui.removeChild(input);
+        tui.setFocus(editor);
+        tui.requestRender();
+        resolve(value);
+      };
+      input.onSubmit = (value) => finish(value);
+      input.onEscape = () => finish(undefined);
+      tui.addChild(heading);
+      tui.addChild(input);
+      tui.setFocus(input);
+      tui.requestRender();
+    });
+
   const ui: ControllerUi = {
     append,
     setStatus: (text) => {
@@ -364,6 +387,8 @@ export async function runInteractive(
       tui.requestRender();
     },
     select,
+    promptText: (title) => prompt(title, false),
+    promptSecret: (title) => prompt(title, true),
     resetTranscript: () => {
       log = "";
       render();
@@ -390,7 +415,7 @@ export async function runInteractive(
     ui,
     catalog: connected.catalog,
     cwd: connected.cwd,
-    env: process.env,
+    env: options.env ?? process.env,
     initial: {
       session: connected.session,
       sandbox: connected.sandbox,
@@ -476,13 +501,21 @@ async function loadInitialCatalog(
   cwd: string,
   llm: LlmEndpoint | undefined,
 ): Promise<CatalogState> {
-  try {
-    return await loadCatalog({ cwd, env: process.env, ...(llm === undefined ? {} : { llm }) });
-  } catch (error) {
-    process.stderr.write(`[catalog] ${errorMessage(error)}\n`);
-    return {
-      presets: [],
-      ...(llm === undefined ? {} : { envPreset: environmentPreset(llm), envEndpoint: llm }),
-    };
+  for (const warning of await migrateLegacyConfig(process.env)) {
+    process.stderr.write(`[config] ${warning}\n`);
   }
+  let credentials: Credentials = {};
+  try {
+    credentials = await loadCredentials(process.env);
+  } catch (error) {
+    process.stderr.write(`[credentials] ${errorMessage(error)}\n`);
+  }
+  const state = await loadCatalog({
+    cwd,
+    env: process.env,
+    credentials,
+    ...(llm === undefined ? {} : { llm }),
+  });
+  for (const warning of state.warnings) process.stderr.write(`[catalog] ${warning}\n`);
+  return state;
 }

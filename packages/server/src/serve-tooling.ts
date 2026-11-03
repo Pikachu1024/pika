@@ -25,6 +25,15 @@ export interface ServeToolingOptions {
 export function createServeTooling(options: ServeToolingOptions): SessionToolingFactory {
   return (context, policy) => {
     const outputDirectory = sessionOutputDirectory(options.sessionsDir, context.sessionId);
+    if (context.llm?.tools === false) {
+      return {
+        tools: [],
+        executor: new ToolBatchExecutor(new ToolRegistry(), {
+          maxOutputBytes: policy.maxOutputBytes,
+          outputStore: new FileToolOutputStore(outputDirectory),
+        }),
+      };
+    }
     const pathPolicy = createPathPolicy({
       workspaceRoot: policy.workspaceRoot,
       policy,

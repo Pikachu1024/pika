@@ -118,7 +118,7 @@ provider 凭据只保留在 harness 进程内，不传给工具子进程。子�
 
 服务模式与回收约定：
 
-- `pika serve [--port <n>] [--host <addr>] [--dir <path>]` 独立运行服务，沿用 `PIKA_PORT`、`PIKA_HOST`、`PIKA_SESSION_DIR`，启动后打印 `pika-server listening on ws://...`。
+- `pika serve [--port <n>] [--host <addr>] [--dir <path>]` 独立运行服务，沿用 `PIKA_PORT`、`PIKA_HOST`、`PIKA_SESSION_DIR`，会话目录默认 `$PIKA_HOME/sessions`（`~/.pika/sessions`），启动后打印 `pika-server listening on ws://...`。
 - `--exit-on-parent-stdin-close` 由 launcher 使用：父进程 stdin 关闭即停止监听并退出，避免客户端异常死亡后留下孤儿进程。
 - `pika --url <ws://...>` 或 `PIKA_SERVER_URL` 进入远程模式，不启动本地服务。
 - launcher 只向本地服务子进程传递显式环境白名单（`PIKA_*`、`HOME`、`PATH`、`TMPDIR`、语言与代理变量），不继承完整 `process.env`。

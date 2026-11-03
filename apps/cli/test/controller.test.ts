@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import type { SelectItem } from "@mariozechner/pi-tui";
 import { PikaClient } from "@pika-harness/client";
@@ -15,8 +17,10 @@ import { createInProcessTransportPair } from "@pika-harness/server";
 import type { TestServer, TestServerOptions } from "../../../test/helpers.js";
 import { createTestServer } from "../../../test/helpers.js";
 import type { CatalogState } from "../src/catalog.js";
+import { presetSource, resolvePreset } from "../src/catalog.js";
 import type { ControllerUi } from "../src/controller.js";
 import { SessionController } from "../src/controller.js";
+import { credentialsPath } from "../src/credentials.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -28,6 +32,7 @@ class FakeUi implements ControllerUi {
   log = "";
   status = "";
   readonly selections: Array<string | undefined> = [];
+  readonly prompts: Array<string | undefined> = [];
 
   append(text: string): void {
     this.log += text;
@@ -39,6 +44,14 @@ class FakeUi implements ControllerUi {
 
   select(_title: string, _items: SelectItem[]): Promise<string | undefined> {
     return Promise.resolve(this.selections.shift());
+  }
+
+  promptText(_title: string): Promise<string | undefined> {
+    return Promise.resolve(this.prompts.shift());
+  }
+
+  promptSecret(_title: string): Promise<string | undefined> {
+    return Promise.resolve(this.prompts.shift());
   }
 
   resetTranscript(): void {
@@ -56,8 +69,10 @@ function preset(name: string, overrides: Partial<ModelPreset> = {}): ModelPreset
 }
 
 const catalog: CatalogState = {
-  path: "/workspace/.pika/models.json",
+  projectPath: "/workspace/.pika/models.json",
   presets: [preset("alpha", { apiKeyEnv: "ALPHA_KEY" }), preset("beta")],
+  sources: { alpha: "project", beta: "project" },
+  warnings: [],
   defaultAlias: "alpha",
 };
 
@@ -94,7 +109,7 @@ async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
   const controller = new SessionController({
     client,
     ui,
-    catalog: options.catalog ?? { presets: [] },
+    catalog: options.catalog ?? { presets: [], sources: {}, warnings: [] },
     cwd: env.cwd,
     env: options.envVars ?? {},
     initial: {
@@ -148,6 +163,144 @@ async function summarize(provider: Provider, messages: LlmMessage[]): Promise<st
 }
 
 describe("session controller", () => {
+  it("marks preset sources and tool capability without leaking keys", async () => {
+    const custom: CatalogState = {
+      projectPath: "/workspace/.pika/models.json",
+      userPath: "/home/u/.config/pika/models.json",
+      presets: [preset("alpha"), preset("local", { tools: false })],
+      sources: { alpha: "project", local: "user" },
+      warnings: [],
+      defaultAlias: "alpha",
+      credentials: { alpha: "stored-secret", local: "stored-local" },
+    };
+    const harness = await createHarness({ catalog: custom, alias: "alpha", model: "alpha-model" });
+
+    harness.controller.showModels();
+    expect(harness.ui.log).toContain("alpha - alpha-model [project]");
+    expect(harness.ui.log).toContain("local - local-model [user] tools=off");
+    expect(harness.ui.log).not.toContain("stored-secret");
+    expect(harness.ui.log).not.toContain("stored-local");
+
+    harness.ui.log = "";
+    harness.controller.showConfig();
+    expect(harness.ui.log).toContain("project catalog: /workspace/.pika/models.json");
+    expect(harness.ui.log).toContain("user catalog: /home/u/.config/pika/models.json");
+    expect(harness.ui.log).toContain("alpha (alpha-model) [project] - credentials set");
+    expect(harness.ui.log).not.toContain("stored-secret");
+    expect(harness.ui.log).not.toContain("stored-local");
+  });
+
+  it("saves a connected preset, reloads catalogs, and starts a new session", async () => {
+    const configDir = await mkdtemp(path.join(tmpdir(), "pika-controller-connect-"));
+    cleanups.push(() => rm(configDir, { recursive: true, force: true }));
+    const harness = await createHarness({
+      catalog,
+      alias: "alpha",
+      model: "alpha-model",
+      envVars: { PIKA_CONFIG_DIR: configDir },
+    });
+    harness.ui.selections.push("no");
+
+    await harness.controller.connect({
+      provider: "openai-compatible",
+      alias: "jiuwei",
+      baseUrl: "http://127.0.0.1:59000/v1",
+      model: "jiuwei-tcm",
+      apiKey: "smoke-secret",
+      tools: false,
+    });
+
+    expect(harness.ui.log).toContain("[connect] saved jiuwei");
+    expect(harness.ui.log).not.toContain("smoke-secret");
+    expect(harness.ui.status).toContain("jiuwei-tcm (jiuwei)");
+
+    const state = harness.controller.catalog;
+    expect(state.userPath).toBe(path.join(configDir, "models.json"));
+    expect(presetSource(state, "jiuwei")).toBe("user");
+    expect(resolvePreset(state, "jiuwei", {}).endpoint).toEqual({
+      baseUrl: "http://127.0.0.1:59000/v1",
+      model: "jiuwei-tcm",
+      apiKey: "smoke-secret",
+      tools: false,
+    });
+
+    const modelsText = await readFile(path.join(configDir, "models.json"), "utf8");
+    expect(modelsText).not.toContain("smoke-secret");
+    expect(JSON.parse(modelsText).models).toEqual([
+      {
+        name: "jiuwei",
+        model: "jiuwei-tcm",
+        baseUrl: "http://127.0.0.1:59000/v1",
+        tools: false,
+      },
+    ]);
+    const credentials = credentialsPath({ PIKA_CONFIG_DIR: configDir });
+    expect((await stat(credentials)).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(await readFile(credentials, "utf8"))).toEqual({
+      jiuwei: "smoke-secret",
+    });
+  });
+
+  it("runs the connection check without tools", async () => {
+    const configDir = await mkdtemp(path.join(tmpdir(), "pika-controller-ping-"));
+    cleanups.push(() => rm(configDir, { recursive: true, force: true }));
+    const harness = await createHarness({
+      catalog,
+      alias: "alpha",
+      model: "alpha-model",
+      envVars: { PIKA_CONFIG_DIR: configDir },
+      turns: [
+        [
+          { type: "text_delta", text: "pong" },
+          { type: "done", stopReason: "end" },
+        ],
+      ],
+    });
+    harness.ui.selections.push("yes");
+
+    await harness.controller.connect({
+      provider: "openai-compatible",
+      alias: "pinged",
+      baseUrl: "http://127.0.0.1:59000/v1",
+      model: "ping-model",
+      tools: false,
+    });
+
+    expect(harness.ui.log).toContain("[connect] check ok: pong");
+    const provider = harness.env.provider;
+    if (!(provider instanceof FauxProvider)) throw new Error("expected the faux provider");
+    expect(provider.requests.at(-1)?.tools).toEqual([]);
+  });
+
+  it("keeps a saved preset when the connection check fails", async () => {
+    const configDir = await mkdtemp(path.join(tmpdir(), "pika-controller-check-"));
+    cleanups.push(() => rm(configDir, { recursive: true, force: true }));
+    const harness = await createHarness({
+      catalog,
+      alias: "alpha",
+      model: "alpha-model",
+      envVars: { PIKA_CONFIG_DIR: configDir },
+      turns: [
+        [{ type: "error", error: { code: "provider_error", message: "boom", retryable: false } }],
+      ],
+    });
+    harness.ui.selections.push("yes");
+
+    await harness.controller.connect({
+      provider: "openai-compatible",
+      alias: "broken",
+      baseUrl: "http://127.0.0.1:59000/v1",
+      model: "broken-model",
+      tools: true,
+    });
+
+    expect(harness.ui.log).toContain("[connect] check failed: boom");
+    expect(harness.controller.catalog.presets.some((preset) => preset.name === "broken")).toBe(
+      true,
+    );
+    expect(harness.ui.status).toContain("broken-model (broken)");
+  });
+
   it("renders models, config, status, usage, and context without leaking keys", async () => {
     const harness = await createHarness({
       catalog,
@@ -157,13 +310,14 @@ describe("session controller", () => {
     });
 
     harness.controller.showModels();
-    expect(harness.ui.log).toContain("* alpha - alpha-model key=ALPHA_KEY");
-    expect(harness.ui.log).toContain("  beta - beta-model");
+    expect(harness.ui.log).toContain("* alpha - alpha-model [project] key=ALPHA_KEY");
+    expect(harness.ui.log).toContain("  beta - beta-model [project]");
     expect(harness.ui.log).not.toContain("super-secret");
 
     harness.ui.log = "";
     harness.controller.showConfig();
-    expect(harness.ui.log).toContain("/workspace/.pika/models.json");
+    expect(harness.ui.log).toContain("project catalog: /workspace/.pika/models.json");
+    expect(harness.ui.log).toContain("user catalog: (none)");
     expect(harness.ui.log).toContain("ALPHA_KEY set");
     expect(harness.ui.log).not.toContain("super-secret");
 

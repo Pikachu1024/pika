@@ -57,4 +57,12 @@ describe("model catalog schemas", () => {
     expect(ModelPresetSchema.safeParse({ ...base, maxTokens: 1.5 }).success).toBe(false);
     expect(ModelPresetSchema.safeParse(base).success).toBe(true);
   });
+
+  it("accepts the optional tools flag and leaves it undefined by default", () => {
+    const base = { name: "preset", model: "model", baseUrl: "http://x/v1" };
+    expect(ModelPresetSchema.parse(base).tools).toBeUndefined();
+    expect(ModelPresetSchema.parse({ ...base, tools: true }).tools).toBe(true);
+    expect(ModelPresetSchema.parse({ ...base, tools: false }).tools).toBe(false);
+    expect(ModelPresetSchema.safeParse({ ...base, tools: "no" }).success).toBe(false);
+  });
 });

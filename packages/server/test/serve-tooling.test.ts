@@ -10,7 +10,13 @@ import {
   MemorySessionStore,
   resolveSandboxPolicy,
 } from "@pika-harness/core";
-import type { AgentEvent, JsonRpcMessage, SandboxPolicy, ToolResult } from "@pika-harness/schema";
+import type {
+  AgentEvent,
+  JsonRpcMessage,
+  LlmEndpoint,
+  SandboxPolicy,
+  ToolResult,
+} from "@pika-harness/schema";
 import type { ServerSandboxOptions, SessionTooling } from "../src/index.js";
 import {
   createInProcessTransportPair,
@@ -146,23 +152,26 @@ interface HarnessOptions {
   turns: LlmEvent[][];
   sandbox?: Partial<ServerSandboxOptions>;
   executor?: Executor;
+  store?: MemorySessionStore;
 }
 
 interface Harness {
   store: MemorySessionStore;
+  provider: FauxProvider;
   events: AgentEvent[];
   send(method: string, params: unknown): Promise<JsonRpcMessage>;
-  startSession(cwd?: string): Promise<{ sessionId: string; backend: string }>;
+  startSession(cwd?: string, llm?: LlmEndpoint): Promise<{ sessionId: string; backend: string }>;
   forkSession(sessionId: string, entryId: string, cwd: string): Promise<string>;
   close(): Promise<void>;
 }
 
 async function createHarness(options: HarnessOptions): Promise<Harness> {
   const ids = createIdGenerator();
-  const store = new MemorySessionStore({ ids });
+  const store = options.store ?? new MemorySessionStore({ ids });
+  const provider = new FauxProvider(options.turns);
   const server = createSessionServer({
     store,
-    provider: new FauxProvider(options.turns),
+    provider,
     defaultCwd: options.defaultCwd,
     defaultModel: "faux-model",
     clock,
@@ -214,10 +223,14 @@ async function createHarness(options: HarnessOptions): Promise<Harness> {
 
   return {
     store,
+    provider,
     events,
     send,
-    async startSession(cwd = ".") {
-      const response = await send("session.start", { cwd });
+    async startSession(cwd = ".", llm) {
+      const response = await send("session.start", {
+        cwd,
+        ...(llm === undefined ? {} : { llm }),
+      });
       if (!("result" in response)) throw new Error(JSON.stringify(response));
       const result = response.result as {
         session: { id: string };
@@ -280,6 +293,102 @@ describe("serve tooling", () => {
     const result = await execute(tooling, policy, "read_file", { path: "note.txt" });
     expect(result.isError).toBe(false);
     expect(text(result)).toBe("hello tooling\n");
+  });
+
+  it("declares no tools when the session endpoint disables tool calling", async () => {
+    const workspace = await tempDir("pika-tooling-ws-");
+    const sessionsDir = await tempDir("pika-tooling-sessions-");
+    const harness = await createHarness({
+      defaultCwd: workspace,
+      sessionsDir,
+      turns: [textTurn],
+    });
+    const started = await harness.startSession(".", {
+      baseUrl: "http://127.0.0.1:59000/v1",
+      model: "faux-model",
+      tools: false,
+    });
+
+    await runTurn(harness, started.sessionId, "hello", 1);
+
+    expect(harness.provider.requests[0]?.tools).toEqual([]);
+    expect(
+      harness.events.some(
+        (event) => event.type === "tool_execution_start" || event.type === "tool_execution_end",
+      ),
+    ).toBe(false);
+  });
+
+  it("forks inherit the endpoint tool capability and honor an override", async () => {
+    const workspace = await tempDir("pika-tooling-ws-");
+    const sessionsDir = await tempDir("pika-tooling-sessions-");
+    const harness = await createHarness({
+      defaultCwd: workspace,
+      sessionsDir,
+      turns: [textTurn, textTurn, textTurn],
+    });
+    const endpoint: LlmEndpoint = {
+      baseUrl: "http://127.0.0.1:59000/v1",
+      model: "faux-model",
+      tools: false,
+    };
+    const started = await harness.startSession(".", endpoint);
+    await runTurn(harness, started.sessionId, "first", 1);
+
+    const head = (await harness.store.entries(started.sessionId)).at(-1)?.id;
+    if (head === undefined) throw new Error("missing source head");
+    const inherited = await harness.forkSession(started.sessionId, head, ".");
+    await harness.send("subscribe", { sessionId: inherited });
+    await runTurn(harness, inherited, "inherited", 2);
+    expect(harness.provider.requests[1]?.tools).toEqual([]);
+
+    const forkHead = (await harness.store.entries(inherited)).at(-1)?.id;
+    if (forkHead === undefined) throw new Error("missing fork head");
+    const response = await harness.send("session.fork", {
+      sessionId: inherited,
+      entryId: forkHead,
+      llm: { ...endpoint, tools: true },
+    });
+    if (!("result" in response)) throw new Error(JSON.stringify(response));
+    const overridden = (response.result as { session: { id: string } }).session.id;
+    await harness.send("subscribe", { sessionId: overridden });
+    await runTurn(harness, overridden, "overridden", 3);
+    expect(harness.provider.requests[2]?.tools.length).toBeGreaterThan(0);
+  });
+
+  it("resume uses the client-supplied endpoint tool capability", async () => {
+    const workspace = await tempDir("pika-tooling-ws-");
+    const sessionsDir = await tempDir("pika-tooling-sessions-");
+    const ids = createIdGenerator();
+    const store = new MemorySessionStore({ ids });
+    const endpoint: LlmEndpoint = {
+      baseUrl: "http://127.0.0.1:59000/v1",
+      model: "faux-model",
+      tools: false,
+    };
+    const first = await createHarness({
+      defaultCwd: workspace,
+      sessionsDir,
+      store,
+      turns: [textTurn],
+    });
+    const started = await first.startSession(".", endpoint);
+    await runTurn(first, started.sessionId, "first", 1);
+    expect(first.provider.requests[0]?.tools).toEqual([]);
+
+    const second = await createHarness({
+      defaultCwd: workspace,
+      sessionsDir,
+      store,
+      turns: [textTurn],
+    });
+    await second.send("session.resume", {
+      sessionId: started.sessionId,
+      llm: { ...endpoint, tools: true },
+    });
+    await second.send("subscribe", { sessionId: started.sessionId });
+    await runTurn(second, started.sessionId, "resumed", 1);
+    expect(second.provider.requests[0]?.tools.length).toBeGreaterThan(0);
   });
 
   it("persists oversized output under the session outputs directory", async () => {

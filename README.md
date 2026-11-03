@@ -45,7 +45,19 @@ The binary build uses `bun build --compile`, which embeds the Bun runtime and al
 ./dist/bin/pika --help
 ```
 
-To run from a global install instead of the standalone binary:
+Tagged releases (`v*`) run `.github/workflows/release.yml`, which publishes standalone binaries for macOS (arm64/x64) and Linux (x64/arm64) plus `SHA256SUMS` on GitHub Releases.
+
+To install the standalone binary on your `PATH`:
+
+```bash
+bun run install:local          # builds and installs to ~/.local/bin
+PIKA_INSTALL_DIR=/usr/local/bin bun run install:local
+pika --help
+```
+
+The installer rebuilds with `bun run build:binary`, copies the result as `pika` with mode `0755`, and leaves an existing install untouched if the build fails. It prints the installed path and a `PATH` note only when the destination is not already on `PATH`.
+
+To run from a global Bun install instead of the standalone binary:
 
 ```bash
 bun run link:global
@@ -66,7 +78,9 @@ See [Providers](docs/providers.md) for configuring an OpenAI-compatible LLM endp
 /compact /btw /approve /deny /quit
 ```
 
-Model presets load from `.pika/models.json` or `PIKA_MODELS_FILE`; API keys are referenced by environment variable name only. `/model` and `/handoff` fork the current session instead of changing it in place. See [CLI](docs/cli.md) for the local lifecycle, remote mode, catalog format, precedence rules, and command semantics.
+User state lives in the Pika home directory: `$PIKA_HOME`, defaulting to `~/.pika`. Sessions go to `$PIKA_HOME/sessions`, while user model presets and credentials live in `$PIKA_HOME/models.json` and `$PIKA_HOME/credentials.json`; `PIKA_SESSION_DIR`/`--dir` and `PIKA_CONFIG_DIR` override the individual paths. On first start, `models.json` and `credentials.json` are copied from the legacy `~/.config/pika` location when the new files are absent; existing files are never overwritten.
+
+Model presets load from the Pika home and `.pika/models.json` (or `PIKA_MODELS_FILE`); API keys are referenced by environment variable name only. `/model` and `/handoff` fork the current session instead of changing it in place. See [CLI](docs/cli.md) for the local lifecycle, remote mode, catalog format, precedence rules, and command semantics.
 
 ## Commands
 

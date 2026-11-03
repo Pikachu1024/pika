@@ -104,6 +104,23 @@ describe("protocol schemas", () => {
     ).toBe(false);
   });
 
+  it("accepts the optional tools flag and leaves it undefined by default", () => {
+    const start = PROTOCOL_METHODS["session.start"].params;
+    const base = { baseUrl: "http://x/v1", model: "m" };
+    expect(start.parse({ cwd: "/workspace", llm: base }).llm).toEqual(base);
+    expect(start.parse({ cwd: "/workspace", llm: { ...base, tools: false } }).llm).toEqual({
+      ...base,
+      tools: false,
+    });
+    expect(start.parse({ cwd: "/workspace", llm: { ...base, tools: true } }).llm).toEqual({
+      ...base,
+      tools: true,
+    });
+    expect(start.safeParse({ cwd: "/workspace", llm: { ...base, tools: "no" } }).success).toBe(
+      false,
+    );
+  });
+
   it("rejects invalid sandbox selections and turn text", () => {
     expect(
       PROTOCOL_METHODS["sandbox.mode"].params.safeParse({

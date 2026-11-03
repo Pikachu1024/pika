@@ -1,6 +1,6 @@
 {
   "name": "pika-harness",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -14,6 +14,7 @@
     "build": "bun run build:js && bun run build:binary",
     "build:js": "bun run --filter '*' build",
     "build:binary": "bun scripts/build-binaries.ts",
+    "install:local": "bash scripts/install.sh",
     "link:global": "bun run build:js && cd apps/pika && bun link",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun test",

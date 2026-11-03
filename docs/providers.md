@@ -85,6 +85,8 @@ const provider = new PiAiProvider({
 });
 ```
 
+有些 OpenAI 兼容端点不接受请求里的 `tools` 字段。会话端点（`llm`）和模型预设都支持 `tools: false`，此时服务端不向 provider 声明任何内置工具；省略时默认启用。
+
 `pika-server` 可直接通过环境变量切换：
 
 ```bash
@@ -108,7 +110,16 @@ pika --prompt "hello" \
 
 也可用 `PIKA_LLM_BASE_URL`、`PIKA_LLM_MODEL`、`PIKA_LLM_API_KEY`、`PIKA_LLM_CONTEXT_WINDOW`、`PIKA_LLM_MAX_TOKENS` 环境变量提供；命令行参数优先。`--llm-base-url` 与 `--llm-model` 必须同时出现。API key 只保留在服务端内存中，不写入会话 JSONL。
 
-## 4. 测试
+## 4. 用户级配置与凭据
+
+TUI 中的 `/connect` 把个人预设写入 `<config>/models.json`，把密钥写入同目录的 `credentials.json`（目录 `0700`、文件 `0600`）。`<config>` 依次取 `PIKA_CONFIG_DIR`、`PIKA_HOME`、`~/.pika`。启动时若目标文件不存在，会从旧位置 `$XDG_CONFIG_HOME/pika`（默认 `~/.config/pika`）复制一次，已存在的文件不覆盖。
+
+- 预设按别名合并，项目 `.pika/models.json`（或 `PIKA_MODELS_FILE`）覆盖同名用户预设；
+- 启动别名顺序：`--llm-*` / `PIKA_LLM_*` 隐式预设 > 项目默认 > 用户默认 > 第一个预设；
+- 密钥顺序：预设的 `apiKeyEnv` 环境变量 > `credentials.json` 中同别名条目；两者都没有时按无密钥端点处理；
+- `credentials.json` 只保存 `别名 -> 密钥`，不含预设元数据；`/models` 与 `/config` 只报告来源和密钥是否存在。
+
+## 5. 测试
 
 单元测试通过 `stream` 选项注入假传输，不访问网络：
 

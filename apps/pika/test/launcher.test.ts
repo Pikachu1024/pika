@@ -187,6 +187,7 @@ describe("launcher local lifecycle", () => {
         env: {
           PATH: "/bin",
           PIKA_PROVIDER: "echo",
+          PIKA_HOME: "/tmp/pika-home",
           UNRELATED_SECRET: "do-not-forward",
         },
         spawnServer: (spec) => {
@@ -210,6 +211,7 @@ describe("launcher local lifecycle", () => {
     expect(spec?.cwd).toBe("/work/project");
     expect(spec?.env.PIKA_SERVER_TOKEN).toBe("test-token");
     expect(spec?.env.PIKA_PROVIDER).toBe("echo");
+    expect(spec?.env.PIKA_HOME).toBe("/tmp/pika-home");
     expect(spec?.env.UNRELATED_SECRET).toBeUndefined();
     expect(spec?.command.join(" ")).not.toContain("test-token");
 

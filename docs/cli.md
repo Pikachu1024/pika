@@ -28,14 +28,14 @@ pika serve [--port <n>] [--host <addr>] [--dir <path>]
 
 `pika serve` 只运行服务端：
 
-| 参数                           | 说明                                                    |
-| ------------------------------ | ------------------------------------------------------- |
-| `--port <n>`                   | 监听端口，`0` 表示系统分配；默认 `PIKA_PORT` 或 `7331`  |
-| `--host <addr>`                | 监听地址，默认 `PIKA_HOST` 或 `127.0.0.1`               |
-| `--dir <path>`                 | 会话目录，默认 `PIKA_SESSION_DIR` 或 `./.pika/sessions` |
-| `--sandbox-backend <backend>`  | 工具执行后端，默认 `PIKA_SANDBOX_BACKEND` 或 `auto`     |
-| `--exit-on-parent-stdin-close` | stdin 关闭时退出，供 launcher 使用                      |
-| `-h`, `--help`                 | 打印用法                                                |
+| 参数                           | 说明                                                       |
+| ------------------------------ | ---------------------------------------------------------- |
+| `--port <n>`                   | 监听端口，`0` 表示系统分配；默认 `PIKA_PORT` 或 `7331`     |
+| `--host <addr>`                | 监听地址，默认 `PIKA_HOST` 或 `127.0.0.1`                  |
+| `--dir <path>`                 | 会话目录，默认 `PIKA_SESSION_DIR` 或 `$PIKA_HOME/sessions` |
+| `--sandbox-backend <backend>`  | 工具执行后端，默认 `PIKA_SANDBOX_BACKEND` 或 `auto`        |
+| `--exit-on-parent-stdin-close` | stdin 关闭时退出，供 launcher 使用                         |
+| `-h`, `--help`                 | 打印用法                                                   |
 
 启动成功后打印实际监听地址。设置 `PIKA_SERVER_TOKEN` 时，所有 WebSocket 升级都必须携带匹配的 `?token=`，否则在读取任何 JSON-RPC 帧之前返回 401。
 
@@ -57,14 +57,28 @@ sandbox 后端在服务启动时选定一次，所有会话共用同一个 execu
 
 本地 TUI 模式（不带 `--url`）下服务由 launcher 拉起，launcher 不转发客户端参数，因此后端只能通过 `PIKA_SANDBOX_BACKEND` 选择；所有 `PIKA_*` 变量都会转给本地服务。远程模式（`--url` 或 `PIKA_SERVER_URL`）的后端由服务端运维方决定。
 
-## 2. 模型目录
+## 2. Pika home 与模型目录
 
-客户端按以下顺序定位目录文件：
+所有用户级状态默认位于 Pika home：`$PIKA_HOME`，未设置时为 `~/.pika`。
 
-1. `PIKA_MODELS_FILE`，相对路径按当前工作目录解析；
-2. 否则读取 `<cwd>/.pika/models.json`。
+| 内容           | 默认位置                      | 覆盖方式                                 |
+| -------------- | ----------------------------- | ---------------------------------------- |
+| 会话           | `$PIKA_HOME/sessions`         | `PIKA_SESSION_DIR` 或 `pika serve --dir` |
+| 用户级模型目录 | `$PIKA_HOME/models.json`      | `PIKA_CONFIG_DIR`                        |
+| 凭据           | `$PIKA_HOME/credentials.json` | `PIKA_CONFIG_DIR`                        |
 
-默认文件不存在时不会报错，此时只保留 `PIKA_LLM_*` 或 `--llm-*` 提供的隐式 `env` 预设。显式指定的文件无法读取、JSON 非法或不符合 schema 时，客户端报告文件路径和原因，并继续使用当前会话。
+`PIKA_HOME` 会传入 launcher 启动的本地服务，因此客户端和服务端使用同一个 home。旧版本的用户配置位于 `$XDG_CONFIG_HOME/pika`（默认 `~/.config/pika`）；启动时如果新的目标文件不存在，客户端会把 `models.json` 和 `credentials.json` 复制到 home 目录一次。已存在的目标文件不会被覆盖，旧文件保留，复制失败只打印 `[config]` 警告，不阻止启动。设置 `PIKA_CONFIG_DIR` 时不执行迁移。
+
+客户端同时读取用户级目录和项目级目录：
+
+| 来源   | 路径                                                                        |
+| ------ | --------------------------------------------------------------------------- |
+| 用户级 | `${PIKA_CONFIG_DIR:-$PIKA_HOME}/models.json`（`PIKA_HOME` 默认 `~/.pika`）  |
+| 项目级 | `PIKA_MODELS_FILE`（相对路径按 `cwd` 解析），否则 `<cwd>/.pika/models.json` |
+
+用户级目录适合放个人常用端点，不应提交到仓库；项目级目录用于随项目共享的端点。两者都不存在时不会报错，此时只保留 `PIKA_LLM_*` 或 `--llm-*` 提供的隐式 `env` 预设。
+
+合并规则：先加载用户级预设，再按别名用项目级预设覆盖同名项，其余项目级预设追加在后面。项目级目录的 `default` 优先于用户级目录的 `default`。任一文件无法读取、JSON 非法或不符合 schema 时，客户端只报告该文件的路径和原因，另一个目录仍然生效。
 
 ```json
 {
@@ -76,7 +90,8 @@ sandbox 后端在服务启动时选定一次，所有会话共用同一个 execu
       "baseUrl": "http://127.0.0.1:8000/v1",
       "apiKeyEnv": "FAST_API_KEY",
       "contextWindow": 32768,
-      "maxTokens": 4096
+      "maxTokens": 4096,
+      "tools": false
     },
     {
       "name": "reasoning",
@@ -91,16 +106,25 @@ sandbox 后端在服务启动时选定一次，所有会话共用同一个 execu
 - `model`、`baseUrl`：传给会话的模型 id 与端点。
 - `apiKeyEnv`：保存密钥的环境变量名，不是密钥本身。
 - `contextWindow`、`maxTokens`：可选的正整数。
+- `tools`：可选布尔值，默认 `true`。设为 `false` 时不向该端点声明任何内置工具，适用于不接受 `tools` 字段的服务端。
 - `default`：可选，必须指向已定义的别名。
 
-密钥只在需要创建会话时从 `apiKeyEnv` 命名变量读取。变量缺失或为空时命令失败并只报告变量名；`/config` 只显示 `set` 或 `missing`，不会打印密钥，目录错误也不会回显文件内容。
+### 密钥与凭据
+
+`/connect` 保存的密钥单独存放在同一配置目录的 `credentials.json`（目录 `0700`、文件 `0600`，原子替换），不写入 `models.json`。密钥解析优先级：
+
+1. 预设 `apiKeyEnv` 命名的环境变量；
+2. 否则 `credentials.json` 中该别名的值；
+3. 都没有时，若预设声明了 `apiKeyEnv` 则命令失败并只报告变量名；未声明则不带密钥连接。
+
+`/config` 对每个预设只显示环境变量是 `set` 还是 `missing`、凭据是 `set` 还是 `missing`，不会打印密钥。目录和凭据错误也不会回显文件内容。
 
 启动时的模型优先级：
 
 1. 存在 `PIKA_LLM_*` 或 `--llm-*` 时，使用隐式 `env` 预设；
-2. 否则使用目录的 `default`；
+2. 否则使用合并后的 `default`；
 3. 否则使用第一个预设；
-4. 都没有时使用服务端默认模型。
+4. 都没有时使用服务端默认模型，并在启动时提示运行 `/connect`。
 
 `PIKA_MODELS_FILE` 指定的目录与隐式 `env` 预设可以同时存在，`/models` 会把 `env` 排在列表首位。
 
@@ -109,9 +133,10 @@ sandbox 后端在服务启动时选定一次，所有会话共用同一个 execu
 | 命令                                                                      | 说明                                                       |
 | ------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | `/help`                                                                   | 列出命令和参数提示                                         |
-| `/models`                                                                 | 列出预设，`*` 标记当前模型，显示引用的密钥变量名           |
+| `/models`                                                                 | 列出预设，`*` 标记当前模型，显示来源、密钥变量名和工具开关 |
 | `/model [alias]`                                                          | 在会话头部 fork 到新会话并切换预设；无参数时弹出选择列表   |
-| `/config`                                                                 | 显示目录路径、当前默认预设，以及每个密钥变量是否存在       |
+| `/connect`                                                                | 交互式添加或更新用户级 LLM 端点，并新建会话试用            |
+| `/config`                                                                 | 显示两个目录路径、当前默认预设、来源和密钥是否存在         |
 | `/status`                                                                 | 显示会话、模型、沙箱和目录                                 |
 | `/usage`                                                                  | 显示当前会话聚合的 token 用量                              |
 | `/context`                                                                | 显示最近一次上下文投影的消息数和估算 token                 |
@@ -127,6 +152,22 @@ sandbox 后端在服务启动时选定一次，所有会话共用同一个 execu
 | `/quit`                                                                   | 退出客户端（`Ctrl+C` 同样退出）                            |
 
 参数按空白拆分，支持双引号；引号内可用 `\"` 转义。无法识别的命令在本地拒绝，不会作为提示词发送给模型。
+
+### 在 TUI 内配置端点
+
+`/connect` 依次询问：
+
+1. 服务端类型（当前只有 OpenAI 兼容端点）；
+2. Base URL（必填，必须是 `http://` 或 `https://`）；
+3. 模型 id（必填）；
+4. 别名（默认等于模型 id，`env` 为保留名）；
+5. API key（屏蔽输入，回显为 `*`；可直接回车跳过）；
+6. 可选的 context window 和 max output tokens（正整数，回车跳过）；
+7. 是否启用工具调用（默认启用）。
+
+保存时把端点写入用户级 `models.json` 并设为 `default`，密钥写入同目录的 `credentials.json`；同名别名会被覆盖。随后重新加载两个目录，用新端点**新建**一个会话（不会热切换当前会话），并提示是否立即用 `/btw ping` 做一次不带工具的连通性检查。检查失败不影响已保存的预设。
+
+`/connect` 要求在会话 settled 时运行；运行中的回合会被拒绝。工具调用关闭时，新会话的请求不会声明任何内置工具，`/status` 仍显示会话与沙箱信息。
 
 ### 模型切换与会话语义
 
@@ -148,4 +189,4 @@ transcript 中会标记 `[tool]`、`[turn <stopReason>]`、`[compact]`、`[appro
 
 ## 5. 范围
 
-本版不提供 TUI 内的目录编辑、`/btw` 流式输出、会话中途热切换模型（切换总是 fork）、外部 handoff/导出、新的密钥存储，以及用户自定义命令。
+本版不提供任意目录的往返编辑界面、`/btw` 流式输出、会话中途热切换模型（切换总是 fork）、外部 handoff/导出，以及用户自定义命令。`/connect` 只管理用户级目录，项目级目录仍通过文件维护。

@@ -14,14 +14,29 @@ export interface SandboxOptions {
   network?: NetworkPolicy;
 }
 
+export interface ConnectOptions {
+  provider: string;
+  alias: string;
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+  contextWindow?: number;
+  maxTokens?: number;
+  tools: boolean;
+}
+
 /** Operations the slash-command handlers use; implemented by the session controller. */
 export interface CommandContext {
   readonly catalog: CatalogState;
   readonly env: Record<string, string | undefined>;
   readonly cwd: string;
+  readonly busy: boolean;
   print(text: string): void;
   quit(): void;
   select(title: string, items: SelectItem[]): Promise<string | undefined>;
+  promptText(title: string): Promise<string | undefined>;
+  promptSecret(title: string): Promise<string | undefined>;
+  connect(options: ConnectOptions): Promise<void>;
   showModels(): void;
   showConfig(): void;
   showStatus(): void;

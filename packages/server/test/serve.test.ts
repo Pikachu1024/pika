@@ -28,6 +28,25 @@ describe("serve flags", () => {
     expect(options.help).toBe(false);
   });
 
+  it("defaults the session directory to the Pika home", () => {
+    expect(parseServeArgs([], { HOME: "/home/tester" }).dir).toBe(
+      path.join("/home/tester", ".pika", "sessions"),
+    );
+    expect(parseServeArgs([], { HOME: "/home/tester", PIKA_HOME: "/pika/home" }).dir).toBe(
+      path.join("/pika/home", "sessions"),
+    );
+  });
+
+  it("lets PIKA_SESSION_DIR and --dir override the home default", () => {
+    expect(parseServeArgs([], { PIKA_HOME: "/pika/home", PIKA_SESSION_DIR: "/sessions" }).dir).toBe(
+      "/sessions",
+    );
+    expect(
+      parseServeArgs(["--dir", "/cli"], { PIKA_HOME: "/pika/home", PIKA_SESSION_DIR: "/sessions" })
+        .dir,
+    ).toBe("/cli");
+  });
+
   it("lets flags override the port, host, and directory", () => {
     const options = parseServeArgs(["--port", "7444", "--host", "0.0.0.0", "--dir", "/data"], {
       PIKA_PORT: "7331",
@@ -66,6 +85,7 @@ describe("serve flags", () => {
     for (const value of ["auto", "none", "seatbelt", "bwrap", "docker"]) {
       expect(serveUsage).toContain(value);
     }
+    expect(serveUsage).toContain("$PIKA_HOME/sessions (~/.pika/sessions)");
     expect(parseServeArgs(["--help"]).help).toBe(true);
   });
 
