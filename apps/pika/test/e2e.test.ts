@@ -26,6 +26,7 @@ describe("pika launcher", () => {
         TMPDIR: process.env.TMPDIR ?? tmpdir(),
         PIKA_SESSION_DIR: dir,
         PIKA_CONFIG_DIR: path.join(dir, "config"),
+        PIKA_SANDBOX_BACKEND: "none",
       },
     });
     cleanups.push(async () => {
@@ -60,6 +61,7 @@ describe("pika launcher", () => {
         HOME: home,
         TMPDIR: process.env.TMPDIR ?? tmpdir(),
         PIKA_SESSION_DIR: path.join(home, "sessions"),
+        PIKA_SANDBOX_BACKEND: "none",
       },
     });
     cleanups.push(async () => {
@@ -93,6 +95,7 @@ describe("pika launcher", () => {
         HOME: home,
         TMPDIR: process.env.TMPDIR ?? tmpdir(),
         PIKA_HOME: pikaHome,
+        PIKA_SANDBOX_BACKEND: "none",
       },
     });
     cleanups.push(async () => {

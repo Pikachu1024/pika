@@ -26,7 +26,6 @@ jobs:
       - run: bun run typecheck
       - run: bun run lint
       - run: bun run boundary
-      - run: bun run test
       - name: Install sandbox backends
         run: |
           sudo apt-get update
@@ -34,5 +33,6 @@ jobs:
           # Ubuntu 24.04 blocks unprivileged user namespaces through AppArmor.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           docker pull debian:bookworm-slim
+      - run: bun run test
       - name: Sandbox conformance
         run: bun run test:sandbox
